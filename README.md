@@ -23,7 +23,6 @@ vp check     # Format + lint + TypeScript 7 check
 vp pack      # Build publishable ESM + .d.ts into dist/
 ```
 
-
 ## Layout
 
 - `src/` — `index.ts`, `runtime.ts`, `jsx-runtime.ts`, `router.ts`, `ssr.ts`, `revive.ts`, `compiler.ts`, `vite.ts`, `astro/` (`index.ts`, `server.ts`, `client.ts`, `slots.ts`)
@@ -32,6 +31,5 @@ vp pack      # Build publishable ESM + .d.ts into dist/
 - `tests/` — Vitest Node unit suites + real-Chromium Browser Mode suite (`tests/browser/runtime.browser.test.tsx`)
 - `bin/` & `template/` — Zero-dependency `create-aster` project scaffolder
 - `docs/` — [5 Guides & 5 ADRs](./docs/README.md)
-
 
 [![Socket Badge](https://badge.socket.dev/npm/package/@fierst/aster/1.0.0-alpha.2)](https://badge.socket.dev/npm/package/@fierst/aster/1.0.0-alpha.2)
