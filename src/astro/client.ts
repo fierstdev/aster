@@ -38,6 +38,7 @@ export default function hydrateAster(element: HTMLElement) {
     }
 
     const cleanup = () => {
+      element.removeEventListener('astro:unmount', cleanup);
       const current = mountedDisposers.get(element);
       if (current === cleanup) mountedDisposers.delete(element);
       dispose();

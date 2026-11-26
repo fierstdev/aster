@@ -38,7 +38,7 @@ vp build                 # Build playground + aster-manifest.json
 - `src/compiler.ts` — Pure JS+JSX → hoisted `_tpl()` / `_slot()` / `_comp()` compiler + V3 source maps + automatic `__asterSrc` stamping.
 - `src/vite.ts` — Vite+ / Rolldown plugin (`oxc: { jsx: 'preserve' }`, HMR, production `aster-manifest.json`).
 - `src/ssr.ts` — Sync, async (`renderToStringAsync`), and out-of-order streaming (`renderToStream`) SSR.
-- `src/revive.ts` — ~520 B Event-Delegated Lazy Revival client loader.
+- `src/revive.ts` — Event-Delegated Lazy Revival client loader.
 - `src/router.ts` — Browser-native Navigation API + `URLPattern` + View Transitions router.
 - `src/astro/` — Zero-dependency Astro integration (`@fierst/aster/astro`, `/server`, `/client`).
 - `bin/create.mjs` & `template/` — Zero-dependency project scaffolder (`vp dlx @fierst/aster`).

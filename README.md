@@ -5,7 +5,7 @@
 - **Plain `let` local state:** Write `let count = 0` and `count++` inside `function*`—no `()`, no `.value`, no `Proxy`, no `() =>` thunks, no `<Show>` / `<For>`.
 - **Native `yield*` UI flows:** Delegate confirmations, modals, and multi-step wizards with typed return values and zero state-machine boilerplate.
 - **Unified Web Components:** Wrap any `function*` with `defineElement()` to expose it as a standard Custom Element with typed attributes and JS property sync.
-- **Automatic Lazy Revival (~520 B):** `@fierst/aster/vite` automatically stamps exported `function*` components during compile; SSR islands wake up on first interaction with zero `$` syntax and zero `island()` wrappers.
+- **Automatic Lazy Revival:** `@fierst/aster/vite` automatically stamps exported `function*` components during compile; SSR islands wake up on first interaction with zero `$` syntax and zero `island()` wrappers.
 - **Browser-Native Platform First:** Standard `<a href>` routing via Navigation API + `URLPattern` + View Transitions, native `<dialog closedby="any">` / Popover / `commandfor`, and CSS `@scope` / `CSSStyleSheet`.
 - **Vite+ (`vp`) by Default, Zero Runtime Dependencies:** Rust Oxc strips TypeScript natively (`oxc: { jsx: 'preserve' }`), Rolldown bundles, Vitest tests, Oxlint + Oxfmt + TS 7 check, and `tsdown` packs—all from one `vite.config.ts`. Zero backend opinions; works anywhere.
 
@@ -31,5 +31,3 @@ vp pack      # Build publishable ESM + .d.ts into dist/
 - `tests/` — Vitest Node unit suites + real-Chromium Browser Mode suite (`tests/browser/runtime.browser.test.tsx`)
 - `bin/` & `template/` — Zero-dependency `create-aster` project scaffolder
 - `docs/` — [5 Guides & 5 ADRs](./docs/README.md)
-
-[![Socket Badge](https://badge.socket.dev/npm/package/@fierst/aster/1.0.0-alpha.2)](https://badge.socket.dev/npm/package/@fierst/aster/1.0.0-alpha.2)

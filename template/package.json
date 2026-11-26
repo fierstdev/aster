@@ -11,7 +11,7 @@
     "check": "vp check"
   },
   "dependencies": {
-    "@fierst/aster": "^1.0.0-alpha.4"
+    "@fierst/aster": "^1.0.0"
   },
   "devDependencies": {
     "vite-plus": "^1.0.0"

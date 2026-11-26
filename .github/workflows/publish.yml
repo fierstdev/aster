@@ -32,6 +32,12 @@ jobs:
           cache: false
           run-install: true
 
+      - name: Require a version tag for publishing
+        if: github.event_name == 'workflow_dispatch' && !inputs.dry_run && !startsWith(github.ref, 'refs/tags/v')
+        run: |
+          echo "::error::Select a version tag to publish, or choose dry_run."
+          exit 1
+
       - name: Verify Git Tag Matches package.json Version
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -51,7 +57,7 @@ jobs:
         run: vp test --project=node
 
       - name: Install Playwright Chromium
-        run: vp dlx playwright install --with-deps chromium
+        run: npm exec -- playwright install --with-deps chromium
 
       - name: Real-Chromium Browser Mode Tests
         run: vp test --project=browser
@@ -60,6 +66,7 @@ jobs:
         run: |
           vp pack
           npm pack --dry-run
+          npm run test:package
 
   publish:
     name: Publish Package (OIDC Trusted Publishing)
@@ -100,8 +107,8 @@ jobs:
         id: dist_tag
         run: |
           PKG_VER="$(node -p "require('./package.json').version")"
-          if echo "$PKG_VER" | grep -qE '-'; then
-            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          if [[ "$PKG_VER" == *-* ]]; then
+            echo "tag=next" >> "$GITHUB_OUTPUT"
           else
             echo "tag=latest" >> "$GITHUB_OUTPUT"
           fi

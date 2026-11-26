@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { _tpl, _slot, _comp, ErrorBoundary } from '../src/index.ts';
+import { _tpl, _slot, _comp, ErrorBoundary, html, type Ctx } from '../src/index.ts';
 import { renderToString, renderDocument, htmlResponse, resolveIslandSrc } from '../src/ssr.ts';
-import { matchRoute, Router } from '../src/router.ts';
+import { matchRoute, Router, useLocation, useParams, useSearchParams } from '../src/router.ts';
 import { createContext, provide, useContext, Provider } from '../src/index.ts';
 import { renderToStringAsync, renderToStream, streamResponse } from '../src/ssr.ts';
 
@@ -125,6 +125,20 @@ describe('SSR, Spread Attrs, & Production Manifest Lazy Revival', () => {
 });
 
 describe('Router (URLPattern + SSR)', () => {
+  it('keeps params, location and query scoped to each overlapping request', async () => {
+    async function* Page() {
+      await Promise.resolve();
+      yield [useParams().id, '|', useLocation(), '|', useSearchParams().get('tab')];
+    }
+    const routes = [{ path: '/:id', component: Page }];
+    const results = await Promise.all(
+      ['one', 'two'].map((id) =>
+        renderToStringAsync(_comp(Router, { routes, url: '/' + id + '?tab=' + id })),
+      ),
+    );
+    expect(results).toEqual(['one|/one?tab=one|one', 'two|/two?tab=two|two']);
+    expect(useParams()).toEqual({});
+  });
   it('matches parameterized paths and parses searchParams', () => {
     const UserPage = () => null;
     const routes = [{ path: '/users/:id', component: UserPage }];
@@ -151,6 +165,86 @@ describe('Router (URLPattern + SSR)', () => {
 });
 
 describe('SSR Attribute Merging, Range Anchors, Scoped Context, & Streaming', () => {
+  it('renders nested markers and literal dollar sequences once in every SSR mode', async () => {
+    const text = '$$ $&';
+    const child = html`<span title="${'inner'}">${text}</span>`;
+    const view = html`<main>${child}${'sibling'}</main>`;
+    const expected =
+      '<main><!--aster-s:0--><span title="inner"><!--aster-s:1-->$$ $&amp;<!--aster:1--></span><!--aster:0--><!--aster-s:1-->sibling<!--aster:1--></main>';
+    function* Panel() {
+      yield view;
+    }
+    Panel.__asterSrc = '/panel#Panel';
+    const island = _comp(Panel, {});
+    expect(renderToString(island, { revive: true })).toContain(expected);
+    expect(await renderToStringAsync(island, { revive: true })).toContain(expected);
+    expect(await streamResponse(island).text()).toContain(expected);
+  });
+
+  it('emits valid spread attributes and encodes document options for their HTML contexts', () => {
+    const template = _tpl('<p data-aster-a0=""></p>', [{ kind: 'spread', path: [0] }]);
+    const view = _slot(template, [{ 'bad key': 'skip', ONFOCUS: 'skip', 'data-title': 'a&b' }]);
+    const doc = renderDocument(view, {
+      lang: 'x"y',
+      importmap: { sample: '/a<b' },
+      revivalUrl: '/loader<a',
+      runtimeUrl: '/runtime<a',
+    });
+    expect(doc).toContain('<p data-title="a&amp;b"></p>');
+    expect(doc).toContain('lang="x&quot;y"');
+    for (const value of ['/a', '/loader', '/runtime']) expect(doc).toContain(value + '\\u003c');
+  });
+
+  it('flushes the shell before an already-resolved sibling swap', async () => {
+    let release!: () => void;
+    const wait = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    async function* Fast() {
+      yield 'loading';
+      yield 'ready';
+    }
+    async function* Slow() {
+      await wait;
+      yield 'slow';
+    }
+    const stream = renderToStream([_comp(Fast, {}), _comp(Slow, {})], { revive: false });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    release();
+    const doc = await new Response(stream).text();
+    expect(doc.startsWith('<!doctype html>')).toBe(true);
+    expect(doc.indexOf('<template')).toBeGreaterThan(doc.indexOf('<aster-b'));
+    expect(doc).toContain('ready</template>');
+  });
+
+  it('runs registered cleanup for completed, failed and canceled SSR components', async () => {
+    const cleaned: string[] = [];
+    function Page(props: { id: string }, ctx: Ctx) {
+      ctx.onCleanup(() => cleaned.push(props.id));
+      if (props.id === 'failure') throw new Error('render failed');
+      return 'ok';
+    }
+    renderToString(_comp(Page, { id: 'sync' }));
+    await renderToStringAsync(_comp(Page, { id: 'async' }));
+    expect(() => renderToString(_comp(Page, { id: 'failure' }))).toThrow('render failed');
+    let done!: () => void;
+    const disposed = new Promise<void>((resolve) => {
+      done = resolve;
+    });
+    async function* Pending(_: {}, ctx: Ctx) {
+      ctx.onCleanup(() => {
+        cleaned.push('canceled');
+        done();
+      });
+      yield 'loading';
+      await new Promise((resolve) => ctx.signal.addEventListener('abort', resolve, { once: true }));
+    }
+    const reader = renderToStream(_comp(Pending, {})).getReader();
+    expect((await reader.read()).done).toBe(false);
+    await reader.cancel();
+    await disposed;
+    expect(cleaned).toEqual(['sync', 'async', 'failure', 'canceled']);
+  });
   it('merges static class/style with class:*, style:*, and var:* in SSR with zero duplicates', () => {
     const _t1 = _tpl(
       '<button class="btn" style="padding:4px" data-aster-a0="" data-aster-a1="" data-aster-a2="" data-aster-a3="">Go</button>',

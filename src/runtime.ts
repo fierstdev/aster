@@ -391,8 +391,19 @@ export function html(strings: TemplateStringsArray, ...values: any[]): SlotView 
       }
     }
 
-    const template = document.createElement('template');
-    template.innerHTML = markup;
+    cached = {
+      html: markup,
+      bindings: slots.map((s): SlotBinding =>
+        s.kind === 'attr' ? { kind: 'attr', name: s.name!, path: [] } : { kind: 'node', path: [] },
+      ),
+      rawStrings: strings,
+      rawSlots: slots,
+    };
+    tplCache.set(strings, cached);
+  }
+  if (typeof document !== 'undefined' && !cached._tpl) {
+    const slots = cached.rawSlots!;
+    const template = getTemplateEl(cached);
     const frag = template.content;
     const bindings: SlotBinding[] = new Array(slots.length);
     const walker = document.createTreeWalker(
@@ -422,7 +433,7 @@ export function html(strings: TemplateStringsArray, ...values: any[]): SlotView 
     for (const [el, marker] of cleanup) el.removeAttribute(marker);
 
     cached = {
-      html: template.innerHTML,
+      html: cached.html,
       bindings,
       _tpl: template,
       rawStrings: strings,
@@ -489,6 +500,10 @@ function toKebab(prop: string): string {
   return prop.startsWith('--') ? prop : prop.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase());
 }
 
+export function isAttributeName(name: string): boolean {
+  return /^[A-Za-z_:][A-Za-z0-9_:.-]*$/.test(name);
+}
+
 function setAttr(
   el: any,
   name: string,
@@ -498,7 +513,7 @@ function setAttr(
   state: any,
   claiming: boolean,
 ) {
-  if (name === 'key' || name === 'children') return;
+  if (name === 'key' || name === 'children' || !isAttributeName(name)) return;
 
   if (name === 'ref') {
     if (!state.reffed && typeof next === 'function') {
@@ -525,10 +540,13 @@ function setAttr(
         }
       };
       el.addEventListener(evName, state.bound);
-      owner?.onCleanup(() => el.removeEventListener(evName, state.bound));
+      state.unlisten = () => el.removeEventListener(evName, state.bound);
     }
     return;
   }
+
+  // Event props only accept handlers via the listener path above.
+  if (/^on/i.test(name)) return;
 
   if (name === 'bind:value' || name === 'bind:checked' || name === 'bind:open') {
     const isTuple = Array.isArray(next);
@@ -541,7 +559,7 @@ function setAttr(
       if (name === 'bind:checked') set?.(Boolean(el.checked));
       else if (name === 'bind:open') set?.(Boolean(el.open));
       else if (
-        el.value !== '' &&
+        (el.value !== '' || el.defaultValue !== '') &&
         el.value !== String((typeof get === 'function' ? get() : get) ?? '')
       ) {
         set?.(el.type === 'number' || el.type === 'range' ? Number(el.value) : el.value);
@@ -585,7 +603,7 @@ function setAttr(
         owner?.schedule();
       };
       el.addEventListener(ev, state.bound);
-      owner?.onCleanup(() => el.removeEventListener(ev, state.bound));
+      state.unlisten = () => el.removeEventListener(ev, state.bound);
     }
     return;
   }
@@ -649,13 +667,15 @@ function setSpread(
 ) {
   const nextObj = next && typeof next === 'object' ? next : null;
   const prevObj = prev && typeof prev === 'object' ? prev : null;
-  if (!state.keys) state.keys = {};
+  if (!state.keys) state.keys = Object.create(null);
 
   if (prevObj) {
     for (const k of Object.keys(prevObj)) {
       if (!nextObj || !(k in nextObj)) {
         const ks = state.keys[k] ?? (state.keys[k] = {});
         setAttr(el, k, null, prevObj[k], owner, ks, claiming);
+        ks.unlisten?.();
+        delete state.keys[k];
       }
     }
   }
@@ -756,7 +776,13 @@ function mountSlot(
     tpl: compiled,
     patch: (v: readonly any[]) => patch(v, false),
     dispose() {
-      for (const st of states) disposeNodeSlot(st);
+      for (const st of states) {
+        st.unlisten?.();
+        if (st.keys) {
+          for (const key of Object.keys(st.keys)) st.keys[key].unlisten?.();
+        }
+        disposeNodeSlot(st);
+      }
       clearRange(start, end);
       start.remove();
       end.remove();

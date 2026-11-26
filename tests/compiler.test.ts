@@ -116,6 +116,19 @@ describe('Aster JSX-to-Slot Compiler', () => {
     expect(out).toContain('UserCard.__asterSrc = "/UserCard.tsx#default";');
   });
 
+  it('only stamps declarations in JavaScript code', () => {
+    const source = [
+      '// export function* Comment() {}',
+      'const example = "export function* StringExample() {}";',
+      'const snippet = `export function* TemplateExample() {}`;',
+      'const pattern = /export function Badge()/;',
+      'export /* public */ function* Real() { yield <p>export function Fake()</p>; }',
+    ].join('\n');
+    const result = compileModule(source, { moduleUrl: '/src/real.tsx', hmr: true });
+    expect(result.exportedGenerators).toEqual(['Real']);
+    expect(result.exportedStateless).toEqual([]);
+  });
+
   it('ignores < characters inside regex literals and strings', () => {
     const out = compileJSX(`
       export function Check(str) {

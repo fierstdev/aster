@@ -14,6 +14,7 @@ import {
   type Ctx,
 } from '@fierst/aster';
 import { renderToString, renderToStream } from '@fierst/aster/ssr';
+import { installRevival } from '@fierst/aster/revive';
 import { LESSONS } from '../../playground/lessons.ts';
 import { mountSandbox } from '../../playground/sandbox.ts';
 import astroServer from '../../src/astro/server.ts';
@@ -37,6 +38,51 @@ afterEach(() => {
 });
 
 describe('Aster Real-Browser DOM Runtime', () => {
+  it('releases handlers on retired slots while the parent remains mounted', async () => {
+    const shown = signal(true);
+    let clicks = 0;
+    function* Parent() {
+      for (;;)
+        yield <main>{shown() && <button {...{ onClick: () => clicks++ }}>Press</button>}</main>;
+    }
+    dispose = render(<Parent />, root);
+    const retired = root.querySelector('button')!;
+    retired.click();
+    shown.set(false);
+    await flush();
+    retired.click();
+    expect(clicks).toBe(1);
+    shown.set(true);
+    await flush();
+    root.querySelector('button')!.click();
+    expect(clicks).toBe(2);
+  });
+  it('retries failed revival and replays pending clicks in order after one claim', async () => {
+    const moduleUrl = (source: string) => 'data:text/javascript,' + encodeURIComponent(source);
+    const runtime = moduleUrl('export function claim(component, props, el) { component(el); }');
+    const component = moduleUrl(`
+      export default function(el) {
+        el.dataset.claims = String(Number(el.dataset.claims || 0) + 1);
+        el.addEventListener('click', e => { el.dataset.order = (el.dataset.order || '') + e.detail; });
+      }
+    `);
+    const uninstall = installRevival(runtime);
+    try {
+      root.dataset.asterSrc = component + '#missing';
+      const failure = new Promise((resolve) =>
+        root.addEventListener('aster:revival-error', resolve, { once: true }),
+      );
+      root.click();
+      await failure;
+      root.dataset.asterSrc = component;
+      for (const detail of [1, 2])
+        root.dispatchEvent(new MouseEvent('click', { bubbles: true, detail }));
+      await vi.waitFor(() => expect(root.dataset.order).toBe('12'));
+      expect(root.dataset.claims).toBe('1');
+    } finally {
+      uninstall();
+    }
+  });
   it('runs function* local `let` state, derived const, and try/finally cleanup on unmount', async () => {
     let cleaned = false;
 

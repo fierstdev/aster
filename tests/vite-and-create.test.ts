@@ -9,7 +9,7 @@ describe('@fierst/aster/vite Production Island Manifest & HMR', () => {
   it('emits preserved island chunks and aster-manifest.json on client build', () => {
     const plugin = aster();
     plugin.configResolved({ root: '/repo', base: '/', command: 'build', build: { ssr: false } });
-    plugin.buildStart();
+    plugin.buildStart.call({ emitFile: (chunk: { name: string }) => chunk.name });
 
     const emittedChunks: any[] = [];
     const transformCtx = { emitFile: (f: any) => emittedChunks.push(f) };
@@ -27,7 +27,10 @@ describe('@fierst/aster/vite Production Island Manifest & HMR', () => {
     ]);
 
     const emittedAssets: any[] = [];
-    const bundleCtx = { emitFile: (f: any) => emittedAssets.push(f) };
+    const bundleCtx = {
+      emitFile: (f: any) => emittedAssets.push(f),
+      getFileName: (ref: string) => `assets/${ref}.js`,
+    };
     plugin.generateBundle.call(
       bundleCtx,
       {},
@@ -44,6 +47,8 @@ describe('@fierst/aster/vite Production Island Manifest & HMR', () => {
     expect(emittedAssets.length).toBe(1);
     expect(emittedAssets[0].fileName).toBe('aster-manifest.json');
     expect(JSON.parse(emittedAssets[0].source)).toEqual({
+      '@fierst/aster': '/assets/aster-runtime.js',
+      '@fierst/aster/revive': '/assets/aster-revive.js',
       '/src/Counter.tsx': '/assets/Counter-Ab12Cd.js',
     });
   });

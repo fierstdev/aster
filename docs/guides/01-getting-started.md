@@ -83,6 +83,7 @@ Under the hood, Vite+'s Rust **Oxc** strips TypeScript (`oxc: { jsx: 'preserve' 
 `@fierst/aster/ssr` depends solely on Web Standards (`Request`, `Response`, `AbortController`):
 
 ```ts
+import manifest from './dist/aster-manifest.json' with { type: 'json' };
 import { htmlResponse } from '@fierst/aster/ssr';
 import { App } from './app.tsx';
 
@@ -92,6 +93,7 @@ export default {
     return htmlResponse(<App url={url.pathname + url.search} />, {
       title: 'My App',
       revive: true,
+      manifest,
     });
   },
 };

@@ -137,6 +137,8 @@ export default {
 };
 ```
 
+Serve the client build and pass its Aster manifest to the SSR renderer. For a custom build supply `revivalUrl` and `runtimeUrl` or map both package names. SSR runs registered cleanup callbacks and preserves each router's own request URL and params. Tagged `html` templates also work in server components.
+
 ## Documentation
 - [Getting Started](./docs/guides/01-getting-started.md)
 - [Components, Local State, and Signals](./docs/guides/02-components-and-state.md)

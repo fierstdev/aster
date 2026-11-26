@@ -2,7 +2,7 @@
 // Plain `<a href="/...">` tags work natively with zero `<Link>` wrapper.
 // Gracefully falls back to History API when `window.navigation` is unavailable.
 
-import { signal, _comp, type ComponentFn } from './runtime.ts';
+import { signal, _comp, createContext, provide, useContext, type ComponentFn } from './runtime.ts';
 
 export interface RouteDef {
   path: string;
@@ -20,17 +20,18 @@ const currentUrl = signal<string>(
   typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/',
 );
 const currentParams = signal<Record<string, string>>({});
+const routeContext = createContext<{ url: string; params: Record<string, string> } | null>(null);
 
 export function useLocation(): string {
-  return currentUrl();
+  return useContext(routeContext)?.url ?? currentUrl();
 }
 
 export function useParams<T extends Record<string, string> = Record<string, string>>(): T {
-  return currentParams() as T;
+  return (useContext(routeContext)?.params ?? currentParams()) as T;
 }
 
 export function useSearchParams(): URLSearchParams {
-  const url = currentUrl();
+  const url = useLocation();
   const q = url.indexOf('?');
   return new URLSearchParams(q === -1 ? '' : url.slice(q + 1));
 }
@@ -49,6 +50,7 @@ function commitUrl(to: string, transition: boolean) {
 }
 
 export function navigate(to: string, opts: { replace?: boolean; transition?: boolean } = {}): void {
+  if (typeof window === 'undefined') return;
   const nav = typeof window !== 'undefined' ? (window as any).navigation : null;
   if (nav && typeof nav.navigate === 'function') {
     nav.navigate(to, { history: opts.replace ? 'replace' : 'push' });
@@ -170,18 +172,18 @@ export function* Router(
   for (props of ctx) {
     const activeUrl = props.url ?? currentUrl();
     const matched = matchRoute(props.routes, activeUrl);
+    const params = matched?.params ?? {};
+    provide(routeContext, { url: activeUrl, params });
+    if (typeof window !== 'undefined') currentParams.set(params);
     if (matched) {
-      currentParams.set(matched.params);
       yield _comp(
         matched.route.component,
         { params: matched.params, search: matched.search, pathname: matched.pathname },
         matched.route.path,
       );
     } else if (props.fallback) {
-      currentParams.set({});
       yield _comp(props.fallback, { pathname: activeUrl });
     } else {
-      currentParams.set({});
       yield null;
     }
   }

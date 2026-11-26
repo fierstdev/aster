@@ -6,7 +6,15 @@
 //   - Per-request tree-scoped Context isolation (zero cross-request leakage in edge isolates)
 //   - `renderToStringAsync()` & `renderToStream()` (`ReadableStream`) for `async function*` components
 
-import { SLOT, COMP, _runWithContext, _setAsyncContextStorage, type View } from './runtime.ts';
+import {
+  SLOT,
+  COMP,
+  _runWithContext,
+  _setAsyncContextStorage,
+  isAttributeName,
+  type SlotView,
+  type View,
+} from './runtime.ts';
 
 function escapeHtml(str: unknown): string {
   return String(str)
@@ -37,7 +45,8 @@ function applyAttrEntry(
   styles: Map<string, string>,
   extraAttrs: string[],
 ) {
-  if (name === 'key' || name === 'ref' || name === 'children' || name.startsWith('on')) return;
+  if (!isAttributeName(name) || /^on/i.test(name)) return;
+  if (name === 'key' || name === 'ref' || name === 'children') return;
 
   if (name === 'class' || name === 'className') {
     if (typeof val === 'string') {
@@ -229,13 +238,37 @@ export interface SSROptions {
   _inIsland?: boolean;
   /** @internal per-request tree-scoped Context prototype chain */
   _ctxMap?: Record<symbol, any> | null;
+  /** @internal shared with nested renders after a streaming boundary resolves */
+  _signal?: AbortSignal;
 }
 
-function makeSsrCtx(props: any, signal: AbortSignal) {
+function makeSsrCtx(props: any, parentSignal?: AbortSignal) {
+  const controller = new AbortController();
+  const cleanups = new Set<() => void>();
+  const abort = () => controller.abort();
+  if (parentSignal?.aborted) abort();
+  else parentSignal?.addEventListener('abort', abort, { once: true });
   return {
-    signal,
+    signal: controller.signal,
+    abort,
     refresh() {},
-    onCleanup() {},
+    onCleanup(callback: () => void) {
+      cleanups.add(callback);
+    },
+    dispose() {
+      parentSignal?.removeEventListener('abort', abort);
+      abort();
+      const errors: unknown[] = [];
+      for (const cleanup of cleanups) {
+        try {
+          cleanup();
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      cleanups.clear();
+      if (errors.length) throw new AggregateError(errors, 'SSR component cleanup failed');
+    },
     [Symbol.iterator]() {
       let used = false;
       return {
@@ -258,45 +291,22 @@ function wrapSlotNode(idx: number, rendered: string, opts: SSROptions): string {
   return rendered;
 }
 
-function renderRawHtmlTemplateSync(
-  compiled: any,
-  values: readonly any[],
-  opts: SSROptions,
-): string {
-  let out = '';
-  let stripQ = '';
-  for (let i = 0; i < compiled.rawStrings.length; i++) {
-    let chunk = compiled.rawStrings[i];
-    if (stripQ && chunk.startsWith(stripQ)) chunk = chunk.slice(1);
-    stripQ = '';
-    if (i < compiled.rawSlots.length) {
-      const s = compiled.rawSlots[i];
-      const val = values[i];
-      if (s.kind === 'attr') {
-        const m = chunk.match(/([\w:.-]+)\s*=\s*(["']?)$/);
-        if (m) {
-          chunk = chunk.slice(0, chunk.length - m[0].length);
-          stripQ = m[2];
-        }
-        const classes = new Set<string>();
-        const styles = new Map<string, string>();
-        const extra: string[] = [];
-        if (s.name) applyAttrEntry(s.name, val, classes, styles, extra);
-        if (classes.size > 0) extra.push(`class="${escapeHtml([...classes].join(' '))}"`);
-        if (styles.size > 0) {
-          extra.push(
-            `style="${escapeHtml([...styles.entries()].map(([k, v]) => `${k}:${v}`).join(';'))}"`,
-          );
-        }
-        out += chunk + extra.join(' ');
-      } else {
-        out += chunk + wrapSlotNode(i, renderToString(val, opts), opts);
-      }
-    } else {
-      out += chunk;
-    }
+function templateParts<T extends string | Promise<string>>(
+  view: SlotView,
+  renderNode: (index: number) => T,
+): (string | T)[] {
+  const tpl = view[SLOT];
+  const markup = hydrateTemplateAttrs(tpl.html, tpl.bindings, view.v);
+  const parts: (string | T)[] = [];
+  let offset = 0;
+  for (const match of markup.matchAll(/<!--aster:(\d+)-->/g)) {
+    const index = Number(match[1]);
+    if (tpl.bindings[index]?.kind !== 'node') continue;
+    parts.push(markup.slice(offset, match.index), renderNode(index));
+    offset = match.index + match[0].length;
   }
-  return out;
+  parts.push(markup.slice(offset));
+  return parts;
 }
 
 // =============================================================================
@@ -316,15 +326,14 @@ export function renderToString(view: View, opts: SSROptions = {}): string {
       _ctxMap: localCtx,
     };
 
-    const ac = new AbortController();
-    const ctx = makeSsrCtx(view.p, ac.signal);
+    const ctx = makeSsrCtx(view.p);
 
     let innerHtml = '';
     try {
       const res = _runWithContext(localCtx, () => view[COMP](view.p, ctx));
       if (res && typeof res[Symbol.asyncIterator] === 'function') {
         // Sync SSR cannot await async generators; clean up immediately
-        ac.abort();
+        ctx.abort();
         res.return?.();
         innerHtml = '';
       } else if (res && typeof res.next === 'function') {
@@ -332,7 +341,7 @@ export function renderToString(view: View, opts: SSROptions = {}): string {
           const out = _runWithContext(localCtx, () => res.next(view.p));
           innerHtml = renderToString(out.value, childOpts);
         } finally {
-          ac.abort();
+          ctx.abort();
           if (typeof res.return === 'function') res.return();
         }
       } else {
@@ -347,6 +356,8 @@ export function renderToString(view: View, opts: SSROptions = {}): string {
       } else {
         throw err;
       }
+    } finally {
+      ctx.dispose();
     }
 
     if (isIslandBoundary) {
@@ -357,22 +368,9 @@ export function renderToString(view: View, opts: SSROptions = {}): string {
   }
 
   if (SLOT in view) {
-    const compiled = view[SLOT];
-    if (compiled.rawStrings && compiled.rawSlots) {
-      return renderRawHtmlTemplateSync(compiled, view.v, opts);
-    }
-
-    let htmlStr = hydrateTemplateAttrs(compiled.html, compiled.bindings, view.v);
-    for (let i = 0; i < compiled.bindings.length; i++) {
-      const b = compiled.bindings[i];
-      if (b.kind === 'node') {
-        htmlStr = htmlStr.replace(
-          `<!--aster:${i}-->`,
-          wrapSlotNode(i, renderToString(view.v[i], opts), opts),
-        );
-      }
-    }
-    return htmlStr;
+    return templateParts(view, (i) => wrapSlotNode(i, renderToString(view.v[i], opts), opts)).join(
+      '',
+    );
   }
 
   return '';
@@ -408,6 +406,7 @@ function ensureAsyncContextStorage(): Promise<void> {
 
 export async function renderToStringAsync(view: View, opts: SSROptions = {}): Promise<string> {
   if (!alsReady) await ensureAsyncContextStorage();
+  opts._signal?.throwIfAborted();
   if (view == null || view === false || view === true) return '';
   if (Array.isArray(view)) {
     const parts = await Promise.all(view.map((item) => renderToStringAsync(item, opts)));
@@ -424,8 +423,7 @@ export async function renderToStringAsync(view: View, opts: SSROptions = {}): Pr
       _ctxMap: localCtx,
     };
 
-    const ac = new AbortController();
-    const ctx = makeSsrCtx(view.p, ac.signal);
+    const ctx = makeSsrCtx(view.p, opts._signal);
 
     let innerHtml = '';
     try {
@@ -434,13 +432,14 @@ export async function renderToStringAsync(view: View, opts: SSROptions = {}): Pr
         let lastView: View = null;
         try {
           while (true) {
+            ctx.signal.throwIfAborted();
             const out = await _runWithContext(localCtx, () => res.next(view.p));
             if (!out.done || out.value !== undefined) lastView = out.value;
             if (out.done) break;
           }
           innerHtml = await renderToStringAsync(lastView, childOpts);
         } finally {
-          ac.abort();
+          ctx.abort();
           if (typeof res.return === 'function') await res.return();
         }
       } else if (res && typeof res.next === 'function') {
@@ -448,7 +447,7 @@ export async function renderToStringAsync(view: View, opts: SSROptions = {}): Pr
           const out = _runWithContext(localCtx, () => res.next(view.p));
           innerHtml = await renderToStringAsync(out.value, childOpts);
         } finally {
-          ac.abort();
+          ctx.abort();
           if (typeof res.return === 'function') res.return();
         }
       } else {
@@ -463,6 +462,8 @@ export async function renderToStringAsync(view: View, opts: SSROptions = {}): Pr
       } else {
         throw err;
       }
+    } finally {
+      ctx.dispose();
     }
 
     if (isIslandBoundary) {
@@ -473,53 +474,10 @@ export async function renderToStringAsync(view: View, opts: SSROptions = {}): Pr
   }
 
   if (SLOT in view) {
-    const compiled = view[SLOT];
-    if (compiled.rawStrings && compiled.rawSlots) {
-      let out = '';
-      let stripQ = '';
-      for (let i = 0; i < compiled.rawStrings.length; i++) {
-        let chunk = compiled.rawStrings[i];
-        if (stripQ && chunk.startsWith(stripQ)) chunk = chunk.slice(1);
-        stripQ = '';
-        if (i < compiled.rawSlots.length) {
-          const s = compiled.rawSlots[i];
-          const val = view.v[i];
-          if (s.kind === 'attr') {
-            const m = chunk.match(/([\w:.-]+)\s*=\s*(["']?)$/);
-            if (m) {
-              chunk = chunk.slice(0, chunk.length - m[0].length);
-              stripQ = m[2];
-            }
-            const classes = new Set<string>();
-            const styles = new Map<string, string>();
-            const extra: string[] = [];
-            if (s.name) applyAttrEntry(s.name, val, classes, styles, extra);
-            if (classes.size > 0) extra.push(`class="${escapeHtml([...classes].join(' '))}"`);
-            if (styles.size > 0) {
-              extra.push(
-                `style="${escapeHtml([...styles.entries()].map(([k, v]) => `${k}:${v}`).join(';'))}"`,
-              );
-            }
-            out += chunk + extra.join(' ');
-          } else {
-            out += chunk + wrapSlotNode(i, await renderToStringAsync(val, opts), opts);
-          }
-        } else {
-          out += chunk;
-        }
-      }
-      return out;
-    }
-
-    let htmlStr = hydrateTemplateAttrs(compiled.html, compiled.bindings, view.v);
-    for (let i = 0; i < compiled.bindings.length; i++) {
-      const b = compiled.bindings[i];
-      if (b.kind === 'node') {
-        const rendered = await renderToStringAsync(view.v[i], opts);
-        htmlStr = htmlStr.replace(`<!--aster:${i}-->`, wrapSlotNode(i, rendered, opts));
-      }
-    }
-    return htmlStr;
+    const parts = templateParts(view, async (i) =>
+      wrapSlotNode(i, await renderToStringAsync(view.v[i], opts), opts),
+    );
+    return (await Promise.all(parts)).join('');
   }
 
   return '';
@@ -533,24 +491,33 @@ export interface DocumentOptions {
   lang?: string;
   head?: string;
   importmap?: Record<string, string>;
+  /** Browser module exporting installRevival. Overrides the production manifest. */
+  revivalUrl?: string;
   runtimeUrl?: string;
   revive?: boolean;
   manifest?: RevivalManifest;
   base?: string;
 }
 
+function inlineJson(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
 function buildDocOpen(opts: DocumentOptions): string {
   const title = escapeHtml(opts.title ?? 'Aster');
-  const lang = opts.lang ?? 'en';
+  const lang = escapeHtml(opts.lang ?? 'en');
   const importmapTag = opts.importmap
-    ? `<script type="importmap">${JSON.stringify({ imports: opts.importmap })}</script>`
+    ? `<script type="importmap">${inlineJson({ imports: opts.importmap })}</script>`
     : '';
   return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>${title}</title>${importmapTag}${opts.head ?? ''}</head><body><div id="app">`;
 }
 
 function buildReviveScript(opts: DocumentOptions): string {
   if (!(opts.revive ?? true)) return '';
-  return `<script type="module">import{installRevival}from'@fierst/aster/revive';installRevival(${JSON.stringify(opts.runtimeUrl ?? '@fierst/aster')});</script>`;
+  const loader =
+    opts.revivalUrl ?? resolveIslandSrc('@fierst/aster/revive', opts.manifest, opts.base);
+  const runtime = opts.runtimeUrl ?? resolveIslandSrc('@fierst/aster', opts.manifest, opts.base);
+  return `<script type="module">import{installRevival}from${inlineJson(loader)};installRevival(${inlineJson(runtime)});</script>`;
 }
 
 /** Render an Aster view into a complete HTML5 document with automatic Lazy Revival. */
@@ -569,6 +536,7 @@ export function htmlResponse(view: View, opts: DocumentOptions = {}, status = 20
 }
 
 interface StreamTracker {
+  signal: AbortSignal;
   nextId(): number;
   register(task: Promise<void>): void;
   emit(chunk: string): void;
@@ -588,6 +556,7 @@ async function renderStreamNode(
   tracker: StreamTracker,
 ): Promise<string> {
   if (!alsReady) await ensureAsyncContextStorage();
+  tracker.signal.throwIfAborted();
   if (view == null || view === false || view === true) return '';
   if (Array.isArray(view)) {
     const parts = await Promise.all(view.map((item) => renderStreamNode(item, opts, tracker)));
@@ -604,17 +573,18 @@ async function renderStreamNode(
       _ctxMap: localCtx,
     };
 
-    const ac = new AbortController();
-    const ctx = makeSsrCtx(view.p, ac.signal);
+    const ctx = makeSsrCtx(view.p, tracker.signal);
+    let deferredCleanup = false;
+    let iterator: AsyncGenerator | undefined;
 
     let innerHtml = '';
     try {
       const res = _runWithContext(localCtx, () => view[COMP](view.p, ctx));
       if (res && typeof res[Symbol.asyncIterator] === 'function') {
         // Pull the first yielded view immediately (loading skeleton) for fast TTFB
+        iterator = res;
         const first = await _runWithContext(localCtx, () => res.next(view.p));
         if (first.done) {
-          ac.abort();
           innerHtml = await renderStreamNode(first.value, childOpts, tracker);
         } else {
           const id = tracker.nextId();
@@ -622,14 +592,16 @@ async function renderStreamNode(
           innerHtml = `<aster-b id="aster-b-${id}">${fallbackHtml}</aster-b>`;
 
           // Pump the remaining async yields out-of-order and stream swap script on completion
+          deferredCleanup = true;
           const task = (async () => {
             let lastView: View = first.value;
             try {
-              while (true) {
+              while (!ctx.signal.aborted) {
                 const step = await _runWithContext(localCtx, () => res.next(view.p));
                 if (!step.done || step.value !== undefined) lastView = step.value;
                 if (step.done) break;
               }
+              if (ctx.signal.aborted) return;
               const resolvedHtml = await renderToStringAsync(lastView, childOpts);
               tracker.emit(buildSwapChunk(id, resolvedHtml));
             } catch (err) {
@@ -639,10 +611,16 @@ async function renderStreamNode(
                   childOpts,
                 );
                 tracker.emit(buildSwapChunk(id, errHtml));
+              } else if (!ctx.signal.aborted) {
+                throw err;
               }
             } finally {
-              ac.abort();
-              if (typeof res.return === 'function') await res.return();
+              ctx.abort();
+              try {
+                await res.return?.();
+              } finally {
+                ctx.dispose();
+              }
             }
           })();
           tracker.register(task);
@@ -652,7 +630,7 @@ async function renderStreamNode(
           const out = _runWithContext(localCtx, () => res.next(view.p));
           innerHtml = await renderStreamNode(out.value, childOpts, tracker);
         } finally {
-          ac.abort();
+          ctx.abort();
           if (typeof res.return === 'function') res.return();
         }
       } else {
@@ -668,6 +646,15 @@ async function renderStreamNode(
       } else {
         throw err;
       }
+    } finally {
+      if (!deferredCleanup) {
+        ctx.abort();
+        try {
+          await iterator?.return(undefined);
+        } finally {
+          ctx.dispose();
+        }
+      }
     }
 
     if (isIslandBoundary) {
@@ -678,20 +665,10 @@ async function renderStreamNode(
   }
 
   if (SLOT in view) {
-    const compiled = view[SLOT];
-    if (compiled.rawStrings && compiled.rawSlots) {
-      return renderToStringAsync(view, opts);
-    }
-
-    let htmlStr = hydrateTemplateAttrs(compiled.html, compiled.bindings, view.v);
-    for (let i = 0; i < compiled.bindings.length; i++) {
-      const b = compiled.bindings[i];
-      if (b.kind === 'node') {
-        const rendered = await renderStreamNode(view.v[i], opts, tracker);
-        htmlStr = htmlStr.replace(`<!--aster:${i}-->`, wrapSlotNode(i, rendered, opts));
-      }
-    }
-    return htmlStr;
+    const parts = templateParts(view, async (i) =>
+      wrapSlotNode(i, await renderStreamNode(view.v[i], opts, tracker), opts),
+    );
+    return (await Promise.all(parts)).join('');
   }
 
   return '';
@@ -706,31 +683,45 @@ export function renderToStream(view: View, opts: DocumentOptions = {}): Readable
   const encoder = new TextEncoder();
   const revive = opts.revive ?? true;
 
+  const lifetime = new AbortController();
   return new ReadableStream<Uint8Array>({
+    cancel() {
+      lifetime.abort();
+    },
     async start(controller) {
       let seq = 0;
       const pending: Promise<void>[] = [];
-      let closed = false;
+      let shellSent = false;
+      const earlyChunks: string[] = [];
 
       const tracker: StreamTracker = {
+        signal: lifetime.signal,
         nextId: () => ++seq,
         register: (task) => {
+          void task.catch(() => {}); // Observed by Promise.all after shell emission.
           pending.push(task);
         },
         emit: (chunk) => {
-          if (!closed) controller.enqueue(encoder.encode(chunk));
+          if (lifetime.signal.aborted) return;
+          if (shellSent) controller.enqueue(encoder.encode(chunk));
+          else earlyChunks.push(chunk);
         },
       };
 
       try {
         const body = await renderStreamNode(
           view,
-          { revive, manifest: opts.manifest, base: opts.base },
+          { revive, manifest: opts.manifest, base: opts.base, _signal: lifetime.signal },
           tracker,
         );
+        if (lifetime.signal.aborted) return;
         controller.enqueue(
           encoder.encode(`${buildDocOpen(opts)}${body}</div>${buildReviveScript(opts)}`),
         );
+
+        shellSent = true;
+        for (const chunk of earlyChunks) tracker.emit(chunk);
+        earlyChunks.length = 0;
 
         // Drain all pending async boundaries (handles nested async boundaries too)
         while (pending.length > 0) {
@@ -738,12 +729,12 @@ export function renderToStream(view: View, opts: DocumentOptions = {}): Readable
           await Promise.all(batch);
         }
 
+        if (lifetime.signal.aborted) return;
         controller.enqueue(encoder.encode('</body></html>'));
-        closed = true;
         controller.close();
       } catch (err) {
-        closed = true;
-        controller.error(err);
+        if (!lifetime.signal.aborted) controller.error(err);
+        lifetime.abort();
       }
     },
   });

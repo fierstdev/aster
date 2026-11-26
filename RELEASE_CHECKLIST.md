@@ -1,62 +1,32 @@
-# Aster Public Release Checklist
+# Aster 1.0 release checklist
 
-Follow this sequence for the very first public release of `@fierst/aster` (and `@fierst/ui`) to npm, GitHub, and Cloudflare.
+## Verify the candidate
 
----
-
-## 1. Repository & Package Metadata
-
-- [ ] Confirm your GitHub organization/repo URL and update `repository.url`, `homepage`, `bugs.url` in `package.json` and owner handle (`@fierstdev`) in `.github/CODEOWNERS` so they match your real GitHub repository **exactly** (case-sensitive—required for npm OIDC Trusted Publishing provenance verification).
-- [ ] Choose your initial public version in `package.json` and `template/package.json` (e.g. `1.0.0-alpha.1` or `0.1.0`).
-
-## 2. Local Release Gate & External Tarball Smoke Tests
+- Confirm the library version is `1.0.0` and the generated starter requests `^1.0.0`.
+- Review the changes since `v1.0.0-alpha.4` and date the 1.0 changelog entry when cutting the release.
+- Run the release checks from a clean checkout with the Node version in `.node-version`.
 
 ```bash
 vp install
-vp dlx playwright install chromium
+npm exec -- playwright install chromium
 vp check
-vp test
-vp pack
+vp test --run
 vp build
+vp pack
 npm pack --dry-run
+npm run test:package
 ```
 
-- [ ] Run `npm pack` to produce `fierst-aster-*.tgz`.
-- [ ] Install the local `.tgz` into a throwaway folder outside this repo scaffolded via `node bin/create.mjs /tmp/aster-smoke`, verify `vp dev`, `vp build`, and `dist/aster-manifest.json`.
-- [ ] Test `@fierst/aster/astro` inside a fresh Astro project with `client:visible`, `client:only="aster"`, named slots, and `<ClientRouter />`.
+The package smoke test installs the tarball in a temporary directory and runs its CLI. Chromium checks the generated app in development and production, a server-rendered island on its first click, and Astro hydration, slots, and client navigation.
 
-## 3. One-Time npm Bootstrap & OIDC Trusted Publishing Lock-Down
+## Publish the verified commit
 
-1. **Bootstrap the package name once locally** using interactive hardware/app 2FA:
-   ```bash
-   vp pack
-   npm publish --access public --tag next
-   ```
-   _(npm requires the package record to exist before you can attach a Trusted Publisher.)_
-2. **Create the protected GitHub Environment:**
-   - In GitHub repo _Settings → Environments_, create **`npm-publish`**.
-   - Enable **Required reviewers** (add yourself) and restrict deployment branches/tags to `v*`.
-3. **Bind Trusted Publisher on `npmjs.com`:**
-   - Open your package on `npmjs.com` → _Settings → Trusted Publisher → GitHub Actions_.
-   - Enter exact **Organization/User**, **Repository**, **Workflow filename** (`publish.yml`), and **Environment name** (`npm-publish`).
-   - Run your first OIDC publish within 48 hours so the pending binding activates.
-4. **Lock down publishing access on `npmjs.com`:**
-   - Under _Settings → Publishing access_, select **"Require two-factor authentication and disallow tokens"**.
-   - Revoke any legacy automation tokens on your npm account.
-5. **Enable GitHub Tag Protection:**
-   - Under _Settings → Rules → Rulesets_, protect `refs/tags/v*` so only maintainers can push release tags.
-
-## 4. Cut & Publish a Release via Tag
+1. Confirm GitHub CI passes for the release commit. Check that the `npm-publish` environment has the intended reviewers and that npm's trusted publisher matches the repository, environment, and `publish.yml` workflow.
+2. Create the version tag on that commit when the release is approved. Pushing the tag starts the npm publish workflow.
 
 ```bash
-git tag -a v1.0.0-alpha.1 -m "Aster v1.0.0-alpha.1"
-git push origin v1.0.0-alpha.1
+git tag -a v1.0.0 -m "Aster v1.0.0"
+git push origin v1.0.0
 ```
 
-- Approve the `npm-publish` environment prompt in GitHub Actions.
-- Verify the green **Provenance** badge appears on `https://www.npmjs.com/package/@fierst/aster`.
-
-## 5. Deploy Public Sites
-
-- [ ] Deploy `aster.fierst.dev` (with `/learn`, full 37-file docs from `fierst-aster-docs-v1.zip`, and `/llms.txt` at site root) to Cloudflare Pages / Workers.
-- [ ] Deploy `ui.fierst.dev` (`@fierst/ui`, serving `public/r/*.json` with `Access-Control-Allow-Origin: *`).
+3. Approve the protected environment, then verify the npm version, `latest` dist-tag, and provenance. The workflow assigns prereleases to `next`.

@@ -1,6 +1,6 @@
 {
   "name": "@fierst/aster",
-  "version": "1.0.0-alpha.4",
+  "version": "1.0.0",
   "description": "Browser-native, zero-VDOM web framework by Fierst LLC powered by Generator Components (function*), Slot-Compiled Templates, Unified Web Components, and Automatic Lazy Revival — built on Vite+.",
   "keywords": [
     "aster",
@@ -91,6 +91,7 @@
     "lint": "vp lint",
     "create": "node ./bin/create.mjs",
     "test:node": "vp test --project=node",
+    "test:package": "node tests/package-smoke.mjs",
     "test:browser": "vp test --project=browser"
   },
   "dependencies": {},

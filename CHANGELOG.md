@@ -4,6 +4,14 @@ All notable changes to **Aster** are documented in this file. The format follows
 
 ---
 
+## [1.0.0] - Unreleased
+
+- Isolate SSR route hooks per tree and run component cleanup on completion, failure, and canceled streams.
+- Preserve nested slot boundaries and literal text across sync, async, and streaming SSR. Tagged HTML templates now render on servers without a DOM.
+- Emit browser-resolvable revival entries in the production manifest. Support explicit loader URLs, coalesce concurrent activations, and retry after a failed claim.
+- Validate spread attribute names and encode language and inline configuration in the document serializer.
+- Limit compiler export detection to code tokens. Verify the packed starter, SSR revival, and Astro integration in Chromium before publishing.
+
 ## [1.0.0-alpha.1] - 2026-11-24
 
 Initial public alpha release of **Aster** — a browser-native, zero-VDOM web framework built on Vite+ (`vp`).

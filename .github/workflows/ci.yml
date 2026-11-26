@@ -68,7 +68,12 @@ jobs:
           run-install: true
 
       - name: Install Playwright Chromium
-        run: vp dlx playwright install --with-deps chromium
+        run: npm exec -- playwright install --with-deps chromium
 
       - name: Run Browser Mode Suite
         run: vp test --project=browser
+
+      - name: Test Packed Consumer and Astro Islands
+        run: |
+          vp pack
+          npm run test:package

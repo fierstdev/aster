@@ -4,6 +4,7 @@ import aster from '@fierst/aster/vite';
 export default defineConfig({
   plugins: [aster()],
   lint: {
+    ignorePatterns: ['node_modules/**', 'dist/**'],
     options: {
       typeAware: true,
       typeCheck: true,

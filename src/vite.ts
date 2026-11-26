@@ -45,6 +45,8 @@ export function aster(options: AsterPluginOptions = {}) {
   let base = '/';
   let isBuild = false;
   let isSsrBuild = false;
+  const clientEntries = new Map<string, string>();
+  const virtualPrefix = '\0aster:client:';
   const islandModules = new Map<string, string>(); // absId -> canonical relPath ("/src/Counter.tsx")
 
   function toRelPath(absId: string): string {
@@ -76,8 +78,32 @@ export function aster(options: AsterPluginOptions = {}) {
       isBuild = config.command === 'build';
       isSsrBuild = Boolean(config.build?.ssr);
     },
-    buildStart() {
+    resolveId(id: string) {
+      if (id.startsWith(virtualPrefix)) return id;
+    },
+    load(id: string) {
+      if (id === virtualPrefix + 'runtime') {
+        return `export { claim } from ${JSON.stringify(options.runtimeImport ?? '@fierst/aster')};`;
+      }
+      if (id === virtualPrefix + 'revive')
+        return "export { installRevival } from '@fierst/aster/revive';";
+    },
+    buildStart(this: any) {
       islandModules.clear();
+      clientEntries.clear();
+      if (!isBuild || isSsrBuild) return;
+      for (const [name, specifier] of [
+        ['runtime', '@fierst/aster'],
+        ['revive', '@fierst/aster/revive'],
+      ]) {
+        const ref = this.emitFile({
+          type: 'chunk',
+          id: virtualPrefix + name,
+          name: 'aster-' + name,
+          preserveSignature: 'strict',
+        });
+        clientEntries.set(specifier, ref);
+      }
     },
     transform(this: any, code: string, id: string) {
       const cleanId = id.split('?')[0].replace(/\\/g, '/');
@@ -108,10 +134,13 @@ export function aster(options: AsterPluginOptions = {}) {
       return { code: result.code, map: result.map };
     },
     generateBundle(this: any, _outputOptions: any, bundle: Record<string, any>) {
-      if (!isBuild || isSsrBuild || islandModules.size === 0) return;
+      if (!isBuild || isSsrBuild) return;
 
       const cleanBase = base.endsWith('/') ? base : base + '/';
       const manifest: Record<string, string> = {};
+      for (const [specifier, ref] of clientEntries) {
+        manifest[specifier] = cleanBase + this.getFileName(ref);
+      }
 
       for (const chunk of Object.values(bundle)) {
         if (chunk.type !== 'chunk') continue;

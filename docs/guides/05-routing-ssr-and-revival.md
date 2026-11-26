@@ -50,7 +50,7 @@ You never wrap components in `island()`, `$`, or `client:visible`. When `@fierst
 - Plain **stateless `function` components** stay pure HTML and ship **0 bytes** of JS.
 - During SSR (`renderToString(view, { revive: true })` or `htmlResponse()`), Aster automatically wraps the outermost stamped generator in `<aster-island data-aster-src="..." data-aster-props="...">`.
 
-On page load, only ~520 B of `@fierst/aster/revive` runs:
+On page load, the delegated listener from `@fierst/aster/revive` runs:
 
 1. Hovering (`pointerenter`) or focusing (`focusin`) inside an island preloads its ES module via `<link rel="modulepreload">`.
 2. On first `click`, `input`, `change`, or `submit`, only that island imports its module, calls `claim()` to attach directly onto the existing SSR DOM in-place, preserves any text already typed into inputs, and replays the event.
@@ -69,6 +69,12 @@ import { htmlResponse } from '@fierst/aster/ssr';
 return htmlResponse(<App />, { revive: true, manifest });
 ```
 
+Serve the client build at its configured base URL. The Aster manifest includes the loader and runtime chunks as well as component entries. Include each interactive component module in the client build. Keep island modules free of application startup side effects since the browser imports them on demand.
+
+For a hand-built client or a standard Vite manifest without those entries, pass browser module URLs in `revivalUrl` and `runtimeUrl`, or provide an import map for `@fierst/aster/revive` and `@fierst/aster`. A failed activation dispatches a bubbling `aster:revival-error` event with the error in `detail`; the next interaction attempts activation again. When installing the loader manually, call the function returned by `installRevival()` to remove its delegated listeners.
+
+SSR route hooks read the nearest router's URL and parameters. Async components on Node can read context across an `await`. On runtimes without `AsyncLocalStorage`, capture context before the first `await` or use the route props. Components can register resource cleanup using `ctx.onCleanup()` on both server and client. Stream consumers can cancel the reader to signal pending generators through `ctx.signal`.
+
 ### In-Place HMR During `vp dev`
 
 During development, `@fierst/aster/vite` injects self-accepting `import.meta.hot` handlers (`__asterHmrAccept`) into component modules so editing a `function*`, `function`, or `defineElement()` Web Component hot-swaps mounted instances in-place without reloading the page or resetting sibling state.
@@ -83,6 +89,7 @@ When your tree contains `async function*` components:
 - Use **`renderToStream(view, opts)`** / **`streamResponse(view, opts)`** for instant TTFB: Aster streams the initial HTML shell with each `async function*`'s first yielded loading skeleton immediately, then flushes self-cleaning `<template>` + `<script>` swap chunks out-of-order as each async component resolves:
 
 ```ts
+import manifest from './dist/aster-manifest.json' with { type: 'json' };
 import { streamResponse } from '@fierst/aster/ssr';
 
 export default {
@@ -91,6 +98,7 @@ export default {
     return streamResponse(<App url={url.pathname + url.search} />, {
       title: 'Streaming Aster',
       revive: true,
+      manifest,
     });
   },
 };

@@ -137,6 +137,8 @@ class JSXLowerer {
   src: string;
   pos = 0;
   hoisted: HoistedTpl[] = [];
+  // Only JavaScript tokens outside literals, comments and JSX participate in export matching.
+  declarationSource = '';
   usedHelpers = new Set<string>();
   /** Maps each output body line index -> 0-based line index in `this.src` */
   lineMap: number[] = [0];
@@ -174,6 +176,7 @@ class JSXLowerer {
 
       // Line comment
       if (ch === '/' && this.src[this.pos + 1] === '/') {
+        if (!stopAtCloseBrace) this.declarationSource += ' ';
         const startLine = this.srcLine;
         const start = this.pos;
         const end = this.src.indexOf('\n', this.pos);
@@ -186,6 +189,7 @@ class JSXLowerer {
 
       // Block comment
       if (ch === '/' && this.src[this.pos + 1] === '*') {
+        if (!stopAtCloseBrace) this.declarationSource += ' ';
         const start = this.pos;
         const end = this.src.indexOf('*/', this.pos + 2);
         const target = end === -1 ? n : end + 2;
@@ -203,6 +207,7 @@ class JSXLowerer {
 
       // String literals
       if (ch === '"' || ch === "'") {
+        if (!stopAtCloseBrace) this.declarationSource += '0';
         const startLine = this.srcLine;
         out += this.trackOut(this.readString(ch), startLine);
         continue;
@@ -210,12 +215,14 @@ class JSXLowerer {
 
       // Template literals
       if (ch === '`') {
+        if (!stopAtCloseBrace) this.declarationSource += '0';
         out += this.readTemplateLiteral();
         continue;
       }
 
       // Regex literals
       if (ch === '/' && this.isRegexStart(out)) {
+        if (!stopAtCloseBrace) this.declarationSource += '0';
         const startLine = this.srcLine;
         out += this.trackOut(this.readRegex(), startLine);
         continue;
@@ -234,6 +241,7 @@ class JSXLowerer {
 
       // JSX opening tag `<Tag` or Fragment `<>`
       if (ch === '<' && this.isJSXStart(out)) {
+        if (!stopAtCloseBrace) this.declarationSource += '0';
         const startLine = this.srcLine;
         const el = this.parseJSXElement();
         out += this.trackOut(this.emitJSX(el), startLine);
@@ -241,6 +249,7 @@ class JSXLowerer {
       }
 
       out += ch;
+      if (!stopAtCloseBrace) this.declarationSource += ch;
       if (ch === '\n') {
         this.srcLine++;
         this.lineMap.push(this.srcLine);
@@ -469,6 +478,7 @@ class JSXLowerer {
       }
 
       let text = '';
+      if (this.src[this.pos] === '<') throw new SyntaxError('Unexpected < in JSX children');
       while (
         this.pos < this.src.length &&
         this.src[this.pos] !== '<' &&
@@ -675,7 +685,7 @@ export function compileModule(source: string, options: CompileOptions = {}): Com
   const runtimeImport = options.runtimeImport ?? '@fierst/aster';
   const lowerer = new JSXLowerer(source);
   const body = lowerer.run();
-  const { generators, stateless } = collectExportedComponents(body);
+  const { generators, stateless } = collectExportedComponents(lowerer.declarationSource);
 
   const footer: string[] = [];
   if (options.moduleUrl) {

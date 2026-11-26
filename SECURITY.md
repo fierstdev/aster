@@ -27,5 +27,6 @@ We aim to acknowledge reports within **48 hours** and provide a fix timeline wit
 
 - **Zero Runtime Dependencies:** `@fierst/aster` ships `"dependencies": {}`, eliminating transitive supply-chain risk in application bundles.
 - **Auto-Escaping Everywhere:** All SSR text interpolations, attribute values, and `data-aster-props` JSON payloads are HTML-escaped automatically; client text slots update `Text` nodes directly (`document.createTextNode` / `.data`) and never pass user data to `innerHTML`.
+- Treat template structure, raw document head HTML, and module URLs as application-controlled configuration. Validate application-specific URL schemes before binding untrusted destinations.
 - **Per-Request SSR Context Isolation:** `createContext()` / `provide()` / `useContext()` use isolated prototype chains per render tree (`_runWithContext`), preventing cross-request data leaks in multi-tenant edge isolates (`workerd`).
 - **OIDC Trusted Publishing & Provenance:** Official npm releases are built and published exclusively via GitHub Actions OIDC Trusted Publishing with SLSA provenance attestations and zero static npm write tokens.

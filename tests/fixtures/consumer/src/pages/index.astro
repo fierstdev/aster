@@ -1,0 +1,11 @@
+---
+import { ClientRouter } from 'astro:transitions';
+import { Panel } from '../Panel';
+---
+<html lang="en"><head><title>Astro integration</title><ClientRouter /></head><body>
+  <Panel client:visible label="Visible">
+    <b slot="caption">Named slot</b><span>Default slot</span>
+  </Panel>
+  <Panel client:only="aster" label="Client" />
+  <a href="/other/">Other page</a>
+</body></html>

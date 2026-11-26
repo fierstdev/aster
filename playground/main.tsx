@@ -122,8 +122,8 @@ export function* HomeView() {
             <h1>The browser-native generator framework.</h1>
             <p class="lead">
               Write stateful UI with plain <code>let</code> inside <code>function*</code>, delegate
-              multi-step flows with <code>yield*</code>, and ship ~520 B automatic Lazy Revival
-              SSR—powered by Vite+.
+              multi-step flows with <code>yield*</code>, and ship automatic Lazy Revival SSR—powered
+              by Vite+.
             </p>
             <div class="install-bar">
               <span>$ vp dlx @fierst/aster my-app</span>
@@ -175,8 +175,7 @@ export function* HomeView() {
             <span class="eyebrow">03 · Streaming SSR</span>
             <h3>Automatic Lazy Revival</h3>
             <p class="muted">
-              Exported `function*` components auto-revive on first interaction (~520 B loader, zero
-              `$` syntax).
+              Exported `function*` components auto-revive on first interaction (zero `$` syntax).
             </p>
           </div>
           <div class="grid-cell">
@@ -382,7 +381,7 @@ const CHEAT_SHEET = [
   [
     'Streaming SSR',
     'streamResponse(<App />, { revive: true })',
-    '~520 B auto Lazy Revival + manifest',
+    'Automatic Lazy Revival + manifest',
   ],
 ];
 

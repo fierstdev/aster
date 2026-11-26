@@ -33,7 +33,7 @@ export function scaffoldProject(targetName, cwd = process.cwd(), options = {}) {
   const copyDir = (srcDir, destDir) => {
     for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
       const from = path.join(srcDir, entry.name);
-      const to = path.join(destDir, entry.name);
+      const to = path.join(destDir, entry.name === 'gitignore' ? '.gitignore' : entry.name);
       if (entry.isDirectory()) {
         fs.mkdirSync(to, { recursive: true });
         copyDir(from, to);
