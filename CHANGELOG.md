@@ -4,7 +4,7 @@ All notable changes to **Aster** are documented in this file. The format follows
 
 ---
 
-## [1.0.0] - Unreleased
+## [1.0.0] - 2026-11-26
 
 - Preserve JSX children, nested client components, and exported callbacks during island revival. Recreate captured callbacks in the owning client component and dispose mounted islands when they leave the document.
 
