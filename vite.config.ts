@@ -23,6 +23,10 @@ export default defineConfig({
     },
   },
 
+  build: {
+    outDir: 'dist-site',
+  },
+
   // Library packaging (`vp pack` -> tsdown)
   pack: {
     entry: [
@@ -70,7 +74,7 @@ export default defineConfig({
 
   // Oxlint + TypeScript 7 type-aware checks (`vp check` / `vp lint`)
   lint: {
-    ignorePatterns: ['dist/**', 'template/**'],
+    ignorePatterns: ['dist/**', 'dist-site/**', 'template/**'],
     options: {
       typeAware: true,
       typeCheck: true,
