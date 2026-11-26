@@ -8,7 +8,7 @@
 
 ```bash
 vp install
-npm exec -- playwright install chromium
+npm exec -- playwright install chromium firefox webkit
 vp check
 vp test --run
 vp build
@@ -17,7 +17,7 @@ npm pack --dry-run
 npm run test:package
 ```
 
-The package smoke test installs the tarball in a temporary directory and runs its CLI. Chromium checks the generated app in development and production, a server-rendered island on its first click, and Astro hydration, slots, and client navigation.
+The package smoke test installs the tarball in a temporary directory and runs its CLI. Chromium, Firefox, and WebKit check the generated app in development and production, a server-rendered island on its first click, and Astro hydration, slots, and client navigation.
 
 ## Publish the verified commit
 

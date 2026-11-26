@@ -34,6 +34,9 @@ jobs:
       - name: Pack Library (ESM + .d.mts)
         run: vp pack
 
+      - name: Verify Packed SSR on Minimum Node
+        run: npm exec --yes --package=node@20.19.0 -- node tests/node-compat.mjs
+
       - name: Production Playground Build & Island Manifest
         run: vp build
 
@@ -68,7 +71,7 @@ jobs:
           run-install: true
 
       - name: Install Playwright Chromium
-        run: npm exec -- playwright install --with-deps chromium
+        run: npm exec -- playwright install --with-deps chromium firefox webkit
 
       - name: Run Browser Mode Suite
         run: vp test --project=browser

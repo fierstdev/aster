@@ -2,7 +2,8 @@
 // Plain `<a href="/...">` tags work natively with zero `<Link>` wrapper.
 // Gracefully falls back to History API when `window.navigation` is unavailable.
 
-import { signal, _comp, createContext, provide, useContext, type ComponentFn } from './runtime.ts';
+import { signal, _comp, provide, useContext, type ComponentFn } from './runtime.ts';
+import { routeContext } from './route-context.ts';
 
 export interface RouteDef {
   path: string;
@@ -20,7 +21,6 @@ const currentUrl = signal<string>(
   typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/',
 );
 const currentParams = signal<Record<string, string>>({});
-const routeContext = createContext<{ url: string; params: Record<string, string> } | null>(null);
 
 export function useLocation(): string {
   return useContext(routeContext)?.url ?? currentUrl();

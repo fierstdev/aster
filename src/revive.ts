@@ -25,6 +25,9 @@ export function installRevival(runtimeUrl = '@fierst/aster'): () => void {
     const [url, exportName = 'default'] = spec.split('#');
     const rawProps = island.getAttribute('data-aster-props');
     const props = rawProps ? JSON.parse(rawProps) : {};
+    for (const key of JSON.parse(island.getAttribute('data-aster-query-props') ?? '[]')) {
+      props[key] = new URLSearchParams(props[key]);
+    }
 
     const [rt, mod] = await Promise.all([
       import(/* @vite-ignore */ runtimeUrl),
@@ -54,13 +57,25 @@ export function installRevival(runtimeUrl = '@fierst/aster'): () => void {
   };
 
   const wake = async (e: Event) => {
-    const target = e.target as Element | null;
+    const node = e.target;
+    const target =
+      node instanceof Element ? node : node instanceof Node ? node.parentElement : null;
     const island = target?.closest?.('[data-aster-src]');
     if (!island || revived.has(island)) return;
 
+    // A cached import can finish between capture and target listeners in WebKit.
+    // Only the replay should reach the newly attached component handlers.
+    e.stopImmediatePropagation();
     // Prevent default synchronously on form submit so async import() doesn't miss it
-    if (e.type === 'submit') e.preventDefault();
+    if (
+      e.type === 'submit' ||
+      (e.type === 'click' &&
+        target instanceof HTMLInputElement &&
+        (target.type === 'checkbox' || target.type === 'radio'))
+    )
+      e.preventDefault();
     if (await reviveIsland(island)) {
+      if (e.eventPhase !== Event.NONE) await new Promise<void>((resolve) => setTimeout(resolve, 0));
       target?.dispatchEvent(new (e.constructor as any)(e.type, e));
     }
   };

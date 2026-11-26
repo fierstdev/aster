@@ -6,7 +6,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { chromium } from 'playwright';
+import { chromium, firefox, webkit } from 'playwright';
 
 const repo = fileURLToPath(new URL('../', import.meta.url));
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'aster-release-'));
@@ -118,60 +118,83 @@ try {
     bin('astro', typeof astroPkg.bin === 'string' ? astroPkg.bin : astroPkg.bin.astro),
     'build',
   );
-  const browser = await chromium.launch();
-  try {
-    const page = await browser.newPage();
-    page.setDefaultTimeout(10000);
-    const errors = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    const dev = fork(path.join(app, 'dev.mjs'), { cwd: app });
-    const stopped = once(dev, 'exit');
+  for (const engine of [chromium, firefox, webkit]) {
+    console.log('Checking ' + engine.name());
+    const browser = await engine.launch();
     try {
-      const origin = await Promise.race([
-        once(dev, 'message').then(([url]) => url),
-        stopped.then(() => {
-          throw new Error('Development server exited before startup');
-        }),
-      ]);
-      await page.goto(origin);
-      await page.getByRole('button', { name: 'Clicks: 0' }).click();
-      await page.getByRole('button', { name: 'Clicks: 1' }).waitFor();
-      await page.goto('about:blank');
-    } finally {
-      dev.kill();
-      await stopped;
-    }
-    await serve(
-      dist,
-      async (origin) => {
+      const page = await browser.newPage();
+      page.setDefaultTimeout(10000);
+      const errors = [];
+      page.on('pageerror', (e) => {
+        errors.push(e.message);
+        console.error(e);
+      });
+      await page.addInitScript(() =>
+        document.addEventListener('aster:revival-error', (e) => console.error(String(e.detail))),
+      );
+      page.on('console', (msg) => {
+        if (msg.type() === 'error') console.error(msg.text());
+      });
+      const dev = fork(path.join(app, 'dev.mjs'), { cwd: app });
+      const stopped = once(dev, 'exit');
+      try {
+        const origin = await Promise.race([
+          once(dev, 'message').then(([url]) => url),
+          stopped.then(() => {
+            throw new Error('Development server exited before startup');
+          }),
+        ]);
         await page.goto(origin);
         await page.getByRole('button', { name: 'Clicks: 0' }).click();
         await page.getByRole('button', { name: 'Clicks: 1' }).waitFor();
-        await page.goto(origin + '/ssr');
-        await page.getByRole('button', { name: 'SSR 0' }).click();
-        await page.getByRole('button', { name: 'SSR 1' }).waitFor();
-      },
-      html,
-    );
-    await serve(path.join(app, 'astro-dist'), async (origin) => {
-      await page.goto(origin);
-      await page.locator('astro-island:not([ssr])').first().waitFor();
-      for (const label of ['Visible', 'Client']) {
-        await page
-          .locator('astro-island:not([ssr])')
-          .getByRole('button', { name: label + ' 0' })
-          .click();
-        await page.getByRole('button', { name: label + ' 1' }).waitFor();
+        await page.goto('about:blank');
+      } finally {
+        dev.kill();
+        await stopped;
       }
-      await page.getByText('Named slot').waitFor();
-      await page.getByText('Default slot').waitFor();
-      await page.getByRole('link', { name: 'Other page' }).click();
-      await page.getByRole('link', { name: 'Return' }).click();
-      await page.getByRole('button', { name: 'Visible 0' }).waitFor();
-    });
-    assert.deepEqual(errors, []);
-  } finally {
-    await browser.close();
+      await serve(
+        dist,
+        async (origin) => {
+          await page.goto(origin);
+          await page.getByRole('button', { name: 'Clicks: 0' }).click();
+          await page.getByRole('button', { name: 'Clicks: 1' }).waitFor();
+          await page.goto(origin + '/ssr');
+          await page.getByRole('button', { name: 'SSR 0' }).click();
+          await page.getByRole('button', { name: 'SSR 1' }).waitFor();
+          await page.getByText('Child label', { exact: false }).last().waitFor();
+          const row = await page.getByRole('button', { name: 'List 0' }).elementHandle();
+          await page.getByRole('button', { name: 'List 0' }).click();
+          await page.getByRole('button', { name: 'List 1' }).waitFor();
+          assert(await row.evaluate((el) => el.isConnected));
+          const checkbox = page.getByRole('checkbox');
+          await checkbox.click();
+          await page.getByText('true', { exact: true }).waitFor();
+          assert(await checkbox.isChecked());
+          await page.getByRole('button', { name: 'one info 0' }).click();
+          await page.getByRole('button', { name: 'one info 1' }).waitFor();
+        },
+        html,
+      );
+      await serve(path.join(app, 'astro-dist'), async (origin) => {
+        await page.goto(origin);
+        await page.locator('astro-island:not([ssr])').first().waitFor();
+        for (const label of ['Visible', 'Client']) {
+          await page
+            .locator('astro-island:not([ssr])')
+            .getByRole('button', { name: label + ' 0' })
+            .click();
+          await page.getByRole('button', { name: label + ' 1' }).waitFor();
+        }
+        await page.getByText('Named slot').waitFor();
+        await page.getByText('Default slot').waitFor();
+        await page.getByRole('link', { name: 'Other page' }).click();
+        await page.getByRole('link', { name: 'Return' }).click();
+        await page.getByRole('button', { name: 'Visible 0' }).waitFor();
+      });
+      assert.deepEqual(errors, []);
+    } finally {
+      await browser.close();
+    }
   }
   console.log('Packed consumer, SSR revival, and Astro smoke tests passed.');
 } finally {

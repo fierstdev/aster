@@ -3,6 +3,7 @@
 // keyed .map() reconciliation, minimal signal(), tree-scoped Context, ErrorBoundary, HMR hot-swap,
 // context-aware table/SVG templates, in-place SSR claim(), and unified Web Components.
 
+import { routeContext } from './route-context.ts';
 export const SLOT: unique symbol = Symbol.for('aster.slot') as any;
 export const COMP: unique symbol = Symbol.for('aster.comp') as any;
 
@@ -873,6 +874,21 @@ function patchNodeSlot(anchor: Node, next: any, state: any, owner: Owner | null,
   // 3. Array (Keyed reconciliation via .k property, or index-keyed fallback)
   if (Array.isArray(next)) {
     if (ssrStart) {
+      const ends: Comment[] = [];
+      let cursor: Node | null = anchor.previousSibling;
+      for (let i = next.length - 1; i >= 0 && cursor?.nodeType === 8; i--) {
+        if ((cursor as Comment).data !== 'aster:' + i) break;
+        ends.push(cursor as Comment);
+        cursor = findSsrSlotStart(cursor)?.previousSibling ?? null;
+      }
+      if (ends.length === next.length && cursor === ssrStart) {
+        ends.reverse();
+        state.arrayEntries = next.map((item, i) =>
+          mountArrayEntry(item, getItemKey(item, i), anchor, owner, ends[i]),
+        );
+        ssrStart.remove();
+        return;
+      }
       clearRange(ssrStart, anchor);
       ssrStart.remove();
     }
@@ -933,14 +949,21 @@ function getItemKey(item: any, index: number): unknown {
   return item && typeof item === 'object' && 'k' in item && item.k !== undefined ? item.k : index;
 }
 
-function mountArrayEntry(item: any, key: unknown, before: Node, owner: Owner | null): ArrayEntry {
+function mountArrayEntry(
+  item: any,
+  key: unknown,
+  before: Node,
+  owner: Owner | null,
+  claimedEnd?: Comment,
+): ArrayEntry {
   const boxStart = document.createComment('');
-  const boxEnd = document.createComment('');
+  const boxEnd = claimedEnd ?? document.createComment('');
   const parent = before.parentNode!;
-  parent.insertBefore(boxStart, before);
-  parent.insertBefore(boxEnd, before);
+  parent.insertBefore(boxStart, claimedEnd ? findSsrSlotStart(claimedEnd) : before);
+  if (!claimedEnd) parent.insertBefore(boxEnd, before);
   const innerState = {};
-  patchNodeSlot(boxEnd, item, innerState, owner);
+  patchNodeSlot(boxEnd, item, innerState, owner, Boolean(claimedEnd));
+  boxEnd.data = '';
   return {
     key,
     start: boxStart,
@@ -1271,6 +1294,18 @@ export function mountComponent(
 
   function applyResult(view: any) {
     if (disposed) return;
+    if (claimRange && Array.isArray(view)) {
+      const target = claimRange;
+      claimRange = undefined;
+      const first = target.start ? target.start.nextSibling : target.parent.firstChild;
+      target.parent.insertBefore(start, first);
+      target.parent.insertBefore(document.createComment('aster-s:root'), first);
+      end.data = 'aster:root';
+      target.parent.insertBefore(end, target.end);
+      patchNodeSlot(end, view, slotState, owner, true);
+      end.data = '';
+      return;
+    }
     if (claimRange && view && typeof view === 'object' && view[SLOT]) {
       const target = claimRange;
       claimRange = undefined;
@@ -1468,7 +1503,18 @@ export function render(view: View, container: Element): () => void {
 
 // Claim an existing SSR element in-place (used by revive.ts)
 export function claim(fn: ComponentFn, props: any, rootEl: Element): ComponentHandle {
-  return mountComponent(fn, props, rootEl, null, { parent: rootEl, start: null, end: null });
+  const route = rootEl.getAttribute('data-aster-route');
+  const context = route ? { [routeContext.id]: JSON.parse(route) } : null;
+  return mountComponent(
+    fn,
+    props,
+    rootEl,
+    null,
+    { parent: rootEl, start: null, end: null },
+    undefined,
+    undefined,
+    context,
+  );
 }
 
 // =============================================================================

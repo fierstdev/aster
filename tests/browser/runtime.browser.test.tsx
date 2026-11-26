@@ -38,6 +38,28 @@ afterEach(() => {
 });
 
 describe('Aster Real-Browser DOM Runtime', () => {
+  it('claims keyed list entries inside a slot and preserves their buttons across reorder', async () => {
+    function* Rows() {
+      let items = ['first', 'second'];
+      for (;;)
+        yield (
+          <main>
+            {items.map((key) => (
+              <button key={key} onClick={() => (items = [...items].reverse())}>
+                {key}
+              </button>
+            ))}
+          </main>
+        );
+    }
+    root.innerHTML = renderToString(<Rows />, { revive: true, _inIsland: true });
+    const original = root.querySelector('button')!;
+    const handle = claim(Rows, {}, root);
+    dispose = () => handle.dispose();
+    original.click();
+    await flush();
+    expect(root.querySelectorAll('button')[1]).toBe(original);
+  });
   it('releases handlers on retired slots while the parent remains mounted', async () => {
     const shown = signal(true);
     let clicks = 0;

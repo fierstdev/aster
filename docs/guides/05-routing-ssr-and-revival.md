@@ -75,6 +75,8 @@ For a hand-built client or a standard Vite manifest without those entries, pass 
 
 SSR route hooks read the nearest router's URL and parameters. Async components on Node can read context across an `await`. On runtimes without `AsyncLocalStorage`, capture context before the first `await` or use the route props. Components can register resource cleanup using `ctx.onCleanup()` on both server and client. Stream consumers can cancel the reader to signal pending generators through `ctx.signal`.
 
+Island props can carry JSON data, top-level `URLSearchParams`, and primitive child content. For JSX children with components or callbacks, put the island boundary on the parent that constructs them so the client can recreate the tree. Routed islands restore the matched URL and parameters when they activate.
+
 ### In-Place HMR During `vp dev`
 
 During development, `@fierst/aster/vite` injects self-accepting `import.meta.hot` handlers (`__asterHmrAccept`) into component modules so editing a `function*`, `function`, or `defineElement()` Web Component hot-swaps mounted instances in-place without reloading the page or resetting sibling state.

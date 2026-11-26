@@ -188,17 +188,38 @@ function hydrateTemplateAttrs(
   );
 }
 
-function serializeProps(props: Record<string, unknown> | undefined): string {
-  if (!props) return '';
-  const clean: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(props)) {
-    if (typeof v !== 'function' && v !== undefined && k !== 'children') {
+import { routeContext } from './route-context.ts';
+
+function serializeProps(
+  props: Record<string, unknown> | undefined,
+  context: Record<symbol, unknown>,
+): string {
+  const route = context[routeContext.id];
+  let attrs = route ? ` data-aster-route="${escapeHtml(JSON.stringify(route))}"` : '';
+  const queries: string[] = [];
+  const clean: Record<string, unknown> = Object.create(null);
+  for (const [k, v] of Object.entries(props ?? {})) {
+    if (v instanceof URLSearchParams) {
+      queries.push(k);
+      clean[k] = v.toString();
+    } else if (
+      typeof v !== 'function' &&
+      v !== undefined &&
+      (k !== 'children' ||
+        v === null ||
+        typeof v !== 'object' ||
+        (Array.isArray(v) && v.every((item) => item == null || typeof item !== 'object')))
+    ) {
       clean[k] = v;
     }
   }
-  return Object.keys(clean).length > 0
-    ? ` data-aster-props="${escapeHtml(JSON.stringify(clean))}"`
-    : '';
+  if (queries.length) attrs += ` data-aster-query-props="${escapeHtml(JSON.stringify(queries))}"`;
+  return (
+    attrs +
+    (Object.keys(clean).length > 0
+      ? ` data-aster-props="${escapeHtml(JSON.stringify(clean))}"`
+      : '')
+  );
 }
 
 /**
@@ -314,7 +335,8 @@ function templateParts<T extends string | Promise<string>>(
 // =============================================================================
 export function renderToString(view: View, opts: SSROptions = {}): string {
   if (view == null || view === false || view === true) return '';
-  if (Array.isArray(view)) return view.map((item) => renderToString(item, opts)).join('');
+  if (Array.isArray(view))
+    return view.map((item, i) => wrapSlotNode(i, renderToString(item, opts), opts)).join('');
   if (typeof view !== 'object') return escapeHtml(view);
 
   if (COMP in view) {
@@ -362,7 +384,7 @@ export function renderToString(view: View, opts: SSROptions = {}): string {
 
     if (isIslandBoundary) {
       const resolvedSrc = resolveIslandSrc(view.src!, opts.manifest, opts.base);
-      return `<aster-island data-aster-src="${escapeHtml(resolvedSrc)}"${serializeProps(view.p)}>${innerHtml}</aster-island>`;
+      return `<aster-island data-aster-src="${escapeHtml(resolvedSrc)}"${serializeProps(view.p, localCtx)}>${innerHtml}</aster-island>`;
     }
     return innerHtml;
   }
@@ -410,7 +432,7 @@ export async function renderToStringAsync(view: View, opts: SSROptions = {}): Pr
   if (view == null || view === false || view === true) return '';
   if (Array.isArray(view)) {
     const parts = await Promise.all(view.map((item) => renderToStringAsync(item, opts)));
-    return parts.join('');
+    return parts.map((part, i) => wrapSlotNode(i, part, opts)).join('');
   }
   if (typeof view !== 'object') return escapeHtml(view);
 
@@ -468,7 +490,7 @@ export async function renderToStringAsync(view: View, opts: SSROptions = {}): Pr
 
     if (isIslandBoundary) {
       const resolvedSrc = resolveIslandSrc(view.src!, opts.manifest, opts.base);
-      return `<aster-island data-aster-src="${escapeHtml(resolvedSrc)}"${serializeProps(view.p)}>${innerHtml}</aster-island>`;
+      return `<aster-island data-aster-src="${escapeHtml(resolvedSrc)}"${serializeProps(view.p, localCtx)}>${innerHtml}</aster-island>`;
     }
     return innerHtml;
   }
@@ -560,7 +582,7 @@ async function renderStreamNode(
   if (view == null || view === false || view === true) return '';
   if (Array.isArray(view)) {
     const parts = await Promise.all(view.map((item) => renderStreamNode(item, opts, tracker)));
-    return parts.join('');
+    return parts.map((part, i) => wrapSlotNode(i, part, opts)).join('');
   }
   if (typeof view !== 'object') return escapeHtml(view);
 
@@ -659,7 +681,7 @@ async function renderStreamNode(
 
     if (isIslandBoundary) {
       const resolvedSrc = resolveIslandSrc(view.src!, opts.manifest, opts.base);
-      return `<aster-island data-aster-src="${escapeHtml(resolvedSrc)}"${serializeProps(view.p)}>${innerHtml}</aster-island>`;
+      return `<aster-island data-aster-src="${escapeHtml(resolvedSrc)}"${serializeProps(view.p, localCtx)}>${innerHtml}</aster-island>`;
     }
     return innerHtml;
   }
