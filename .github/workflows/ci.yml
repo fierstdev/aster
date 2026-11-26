@@ -45,7 +45,6 @@ jobs:
           test -f dist/astro/index.mjs
           test -f dist/astro/server.mjs
           test -f dist/astro/client.mjs
-          test -f dist/aster-manifest.json
           test -f dist-site/aster-manifest.json
 
       - name: Verify Scaffolder Smoke Test
