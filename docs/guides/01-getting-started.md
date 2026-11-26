@@ -27,7 +27,7 @@ vp install
 vp dev
 ```
 
-*(From inside the Aster repo itself, you can also run `node bin/create.mjs my-app`.)*
+_(From inside the Aster repo itself, you can also run `node bin/create.mjs my-app`.)_
 
 ---
 

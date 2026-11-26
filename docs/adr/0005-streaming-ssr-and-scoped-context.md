@@ -33,6 +33,7 @@ Three production correctness issues emerge when running a generator-based framew
 ## Consequences
 
 ### Positive
+
 - **Zero-flicker Lazy Revival:** Pre-typed `<input>` text, exact element references, and dynamic classes/CSS variables survive SSR → revival seamlessly.
 - **Safe Multi-Tenant Edge SSR:** Tree-scoped Context and `renderToStream()` make Aster production-safe on Cloudflare Workers (`workerd`).
 - **Real-Browser Confidence:** Every runtime guarantee is verified in real Chromium via `vp test`.

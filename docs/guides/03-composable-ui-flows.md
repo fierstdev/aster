@@ -14,9 +14,13 @@ function* confirmDelete(title: string): Generator<any, boolean, any> {
   while (choice === null) {
     yield (
       <div class="confirm-box" role="alertdialog">
-        <span>Delete <strong>{title}</strong>?</span>
+        <span>
+          Delete <strong>{title}</strong>?
+        </span>
         <button onClick={() => (choice = false)}>Cancel</button>
-        <button class="danger" onClick={() => (choice = true)}>Delete</button>
+        <button class="danger" onClick={() => (choice = true)}>
+          Delete
+        </button>
       </div>
     );
   }
@@ -67,4 +71,5 @@ export function* CheckoutFlow() {
 ```
 
 ### Automatic Teardown Propagation
+
 If `CheckoutFlow` unmounts while the user is halfway through `PaymentStep`, Aster calls `gen.return()` on the outer generator. JavaScript automatically propagates that termination into `PaymentStep`'s `finally` block so timers, listeners, or locks are cleaned up cleanly.

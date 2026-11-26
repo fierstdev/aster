@@ -69,9 +69,7 @@ describe('@fierst/aster/astro/server Renderer', () => {
     function ReactFn() {
       return { $$typeof: Symbol.for('react.transitional.element'), type: 'div', props: {} };
     }
-    class ReactClass {
-      static prototype: any;
-    }
+    class ReactClass {}
     (ReactClass.prototype as any).isReactComponent = {};
 
     expect(await check(GenComp)).toBe(true);
@@ -108,16 +106,21 @@ describe('@fierst/aster/astro/server Renderer', () => {
       {},
       { hydrate: 'visible', astroStaticSlot: true },
     );
-    expect(hydratedRes.html).toBe('<button class="btn hot">Clicks: <!--aster-s:1-->10<!--aster:1--></button>');
+    expect(hydratedRes.html).toBe(
+      '<button class="btn hot">Clicks: <!--aster-s:1-->10<!--aster:1--></button>',
+    );
     expect(hydratedRes.html).not.toContain('<aster-island');
     expect(hydratedRes.attrs).toEqual({ 'data-aster-astro': '1' });
   });
 
   it('supports default & named Astro slots without double-escaping and awaits async function* components', async () => {
-    const _tCard = _tpl('<article><header><!--aster:0--></header><div><!--aster:1--></div></article>', [
-      { kind: 'node', path: [0, 0, 0] },
-      { kind: 'node', path: [0, 1, 0] },
-    ]);
+    const _tCard = _tpl(
+      '<article><header><!--aster:0--></header><div><!--aster:1--></div></article>',
+      [
+        { kind: 'node', path: [0, 0, 0] },
+        { kind: 'node', path: [0, 1, 0] },
+      ],
+    );
 
     async function* AsyncCard(props: { header?: any; children?: any }) {
       yield _slot(_tpl('<p>loading</p>', []), []);
@@ -134,7 +137,7 @@ describe('@fierst/aster/astro/server Renderer', () => {
 
     expect(res.html).toBe(
       '<article><header><astro-slot name="header"><h2>Title</h2></astro-slot></header>' +
-      '<div><astro-slot><p>Body &amp; content</p></astro-slot></div></article>',
+        '<div><astro-slot><p>Body &amp; content</p></astro-slot></div></article>',
     );
   });
 });

@@ -9,6 +9,7 @@ All notable changes to **Aster** are documented in this file. The format follows
 Initial public alpha release of **Aster** — a browser-native, zero-VDOM web framework built on Vite+ (`vp`).
 
 ### Added
+
 - **Generator Component Runtime (`@fierst/aster`):**
   - Stateful `function*` components with plain `let` local state, fresh `const` derivations, `for (props of ctx)` prop loop, and deterministic `try / finally` teardown.
   - Native `yield*` sub-generator UI flows with typed return values and automatic teardown propagation.

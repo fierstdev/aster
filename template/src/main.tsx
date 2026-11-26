@@ -22,7 +22,10 @@ function App() {
   return (
     <main>
       <h1>__APP_NAME__</h1>
-      <p>Plain <code>let</code> state in <code>function*</code> components—powered by Aster &amp; Vite+.</p>
+      <p>
+        Plain <code>let</code> state in <code>function*</code> components—powered by Aster &amp;
+        Vite+.
+      </p>
       <Counter label="Clicks" />
     </main>
   );

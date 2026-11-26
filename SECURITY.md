@@ -2,9 +2,9 @@
 
 ## Supported Versions
 
-| Version | Supported |
-| :--- | :--- |
-| `1.x` | Yes |
+| Version | Supported                            |
+| :------ | :----------------------------------- |
+| `1.x`   | Yes                                  |
 | `< 1.0` | No (internal pre-release prototypes) |
 
 ---
@@ -13,7 +13,8 @@
 
 **Please do not report security vulnerabilities through public GitHub Issues.**
 
-Instead, report vulnerabilities privately via **GitHub Security Advisories** (*Security → Advisories → Report a vulnerability*) or email `security@fierst.dev` with:
+Instead, report vulnerabilities privately via **GitHub Security Advisories** (_Security → Advisories → Report a vulnerability_) or email `security@fierst.dev` with:
+
 - A clear description of the vulnerability and potential impact (e.g., SSR XSS escape bypass, prototype pollution in Context/props, or supply-chain concern).
 - A minimal reproducible snippet or test case.
 - The Aster version and runtime environment (browser, Cloudflare `workerd`, Node.js, Astro).

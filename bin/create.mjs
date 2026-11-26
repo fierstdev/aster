@@ -15,10 +15,16 @@ const TEMPLATE_DIR = path.resolve(BIN_DIR, '../template');
 export function scaffoldProject(targetName, cwd = process.cwd(), options = {}) {
   const cleanName = (targetName || 'my-aster-app').trim();
   const targetDir = path.resolve(cwd, cleanName);
-  const pkgName = path.basename(targetDir).toLowerCase().replace(/[^a-z0-9._-]/g, '-') || 'my-aster-app';
+  const pkgName =
+    path
+      .basename(targetDir)
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]/g, '-') || 'my-aster-app';
 
   if (fs.existsSync(targetDir) && fs.readdirSync(targetDir).length > 0 && !options.force) {
-    throw new Error(`Target directory "${cleanName}" already exists and is not empty. Use --force to overwrite.`);
+    throw new Error(
+      `Target directory "${cleanName}" already exists and is not empty. Use --force to overwrite.`,
+    );
   }
 
   fs.mkdirSync(targetDir, { recursive: true });

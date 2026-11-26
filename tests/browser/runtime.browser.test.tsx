@@ -83,8 +83,12 @@ describe('Aster Real-Browser DOM Runtime', () => {
           yield (
             <div class="confirm">
               <span>Delete {title}?</span>
-              <button id="cancel" onClick={() => (choice = false)}>Cancel</button>
-              <button id="confirm" onClick={() => (choice = true)}>Confirm</button>
+              <button id="cancel" onClick={() => (choice = false)}>
+                Cancel
+              </button>
+              <button id="confirm" onClick={() => (choice = true)}>
+                Confirm
+              </button>
             </div>
           );
         }
@@ -106,7 +110,11 @@ describe('Aster Real-Browser DOM Runtime', () => {
             return;
           }
         }
-        yield <button id="ask" onClick={() => (asking = true)}>Delete</button>;
+        yield (
+          <button id="ask" onClick={() => (asking = true)}>
+            Delete
+          </button>
+        );
       }
     }
 
@@ -188,10 +196,14 @@ describe('Aster Real-Browser DOM Runtime', () => {
       for (;;) {
         yield (
           <div>
-            <button id="rev" onClick={() => (items = [...items].reverse())}>Reverse</button>
+            <button id="rev" onClick={() => (items = [...items].reverse())}>
+              Reverse
+            </button>
             <ul>
               {items.map((it) => (
-                <li key={it.id} data-id={it.id}>{it.label}</li>
+                <li key={it.id} data-id={it.id}>
+                  {it.label}
+                </li>
               ))}
             </ul>
           </div>
@@ -274,8 +286,12 @@ describe('Aster Real-Browser DOM Runtime', () => {
       for (;;) {
         yield (
           <div>
-            <button id="bump" onClick={() => unrelated++}>Unrelated: {unrelated}</button>
-            <button id="switch" onClick={() => (userId = 'u2')}>Switch</button>
+            <button id="bump" onClick={() => unrelated++}>
+              Unrelated: {unrelated}
+            </button>
+            <button id="switch" onClick={() => (userId = 'u2')}>
+              Switch
+            </button>
             <UserLoader id={userId} />
           </div>
         );
@@ -294,6 +310,7 @@ describe('Aster Real-Browser DOM Runtime', () => {
 
     // Switching prop id MUST abort u1 and start u2
     (root.querySelector('#switch') as HTMLButtonElement).click();
+    await flush();
     await flush();
     expect(abortedIds).toEqual(['u1']);
     expect(runs).toBe(2);
@@ -340,7 +357,11 @@ describe('Aster Real-Browser DOM Runtime', () => {
       let n = 0;
       for (;;) {
         if (shouldThrow) throw new Error('Boom!');
-        yield <button id="ok-btn" onClick={() => n++}>Alive: {n}</button>;
+        yield (
+          <button id="ok-btn" onClick={() => n++}>
+            Alive: {n}
+          </button>
+        );
       }
     }
 
@@ -349,7 +370,9 @@ describe('Aster Real-Browser DOM Runtime', () => {
         fallback={(err, reset) => (
           <div>
             <p id="err-msg">{String((err as Error).message)}</p>
-            <button id="retry" onClick={reset}>Retry</button>
+            <button id="retry" onClick={reset}>
+              Retry
+            </button>
           </div>
         )}
       >
@@ -390,7 +413,11 @@ describe('Aster Real-Browser DOM Runtime', () => {
     defineElement('aster-test-widget', Widget, {
       props: { start: 'number', label: 'string' },
       shadow: true,
-      styles: css`button { color: rgb(0, 113, 227); }`,
+      styles: css`
+        button {
+          color: rgb(0, 113, 227);
+        }
+      `,
     });
 
     root.innerHTML = '<aster-test-widget start="10" label="Score"></aster-test-widget>';
@@ -476,7 +503,12 @@ describe('Aster Real-Browser DOM Runtime', () => {
 
     function* Sibling() {
       let clicks = 0;
-      for (;;) yield <button id="hmr-sib" onClick={() => clicks++}>Sib: {clicks}</button>;
+      for (;;)
+        yield (
+          <button id="hmr-sib" onClick={() => clicks++}>
+            Sib: {clicks}
+          </button>
+        );
     }
 
     function Page() {
@@ -558,7 +590,9 @@ describe('Aster Real-Browser DOM Runtime', () => {
         yield (
           <ul id="lis-list">
             {order.map((n) => (
-              <li key={n} data-k={n}>Item {n}</li>
+              <li key={n} data-k={n}>
+                Item {n}
+              </li>
             ))}
           </ul>
         );
@@ -651,6 +685,9 @@ describe('Aster Real-Browser DOM Runtime', () => {
       { default: '<em class="slotted">From Astro</em>' },
       { hydrate: 'visible', astroStaticSlot: true },
     );
+    // SSR runs generator try/finally teardown; reset before verifying client astro:unmount cleanup
+    expect(cleaned).toBe(true);
+    cleaned = false;
 
     const island = document.createElement('astro-island');
     island.innerHTML = ssr.html;

@@ -28,14 +28,18 @@ describe('@fierst/aster/vite Production Island Manifest & HMR', () => {
 
     const emittedAssets: any[] = [];
     const bundleCtx = { emitFile: (f: any) => emittedAssets.push(f) };
-    plugin.generateBundle.call(bundleCtx, {}, {
-      'assets/Counter-Ab12Cd.js': {
-        type: 'chunk',
-        fileName: 'assets/Counter-Ab12Cd.js',
-        facadeModuleId: '/repo/src/Counter.tsx',
-        modules: { '/repo/src/Counter.tsx': {} },
+    plugin.generateBundle.call(
+      bundleCtx,
+      {},
+      {
+        'assets/Counter-Ab12Cd.js': {
+          type: 'chunk',
+          fileName: 'assets/Counter-Ab12Cd.js',
+          facadeModuleId: '/repo/src/Counter.tsx',
+          modules: { '/repo/src/Counter.tsx': {} },
+        },
       },
-    });
+    );
 
     expect(emittedAssets.length).toBe(1);
     expect(emittedAssets[0].fileName).toBe('aster-manifest.json');

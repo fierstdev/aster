@@ -24,5 +24,6 @@ Aster delegates to native Web Platform primitives wherever the browser already s
 ## Consequences
 
 ### Positive
+
 - **Minimal runtime footprint:** The entire core remains a few kilobytes gzipped.
 - **Zero framework lock-in:** Components export cleanly as standard Web Components usable in plain HTML or any other framework.

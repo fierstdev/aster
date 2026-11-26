@@ -59,15 +59,7 @@ export interface CompView<P = any> {
 
 export type ComponentFn<P = any> = (props: P, ctx: Ctx<P>) => any;
 
-export type View =
-  | SlotView
-  | CompView
-  | View[]
-  | string
-  | number
-  | boolean
-  | null
-  | undefined;
+export type View = SlotView | CompView | View[] | string | number | boolean | null | undefined;
 
 // =============================================================================
 // 1. Minimal Signal (~35 lines) — Shared / Cross-Component Pub-Sub
@@ -103,22 +95,34 @@ export function signal<T>(initial: T): Signal<T> {
 // =============================================================================
 // 2. Tree-Scoped Context (Client + SSR Request-Isolated)
 // =============================================================================
+export interface AsyncContextStorage {
+  getStore(): Record<symbol, any> | null | undefined;
+  run<R>(store: Record<symbol, any> | null, fn: () => R): R;
+}
+
 let activeContextMap: Record<symbol, any> | null = null;
+let asyncContextStorage: AsyncContextStorage | null = null;
+
+function getContextMap(): Record<symbol, any> | null {
+  return activeContextMap ?? asyncContextStorage?.getStore() ?? null;
+}
 
 export function createContext<T>(defaultValue: T): Context<T> {
   return { id: Symbol('aster.ctx'), defaultValue };
 }
 
 export function provide<T>(context: Context<T>, value: T): void {
-  if (!activeContextMap) {
+  const ctxMap = getContextMap();
+  if (!ctxMap) {
     throw new Error('[Aster] provide() must be called inside a component render.');
   }
-  activeContextMap[context.id] = value;
+  ctxMap[context.id] = value;
 }
 
 export function useContext<T>(context: Context<T>): T {
-  if (activeContextMap && context.id in activeContextMap) {
-    return activeContextMap[context.id] as T;
+  const ctxMap = getContextMap();
+  if (ctxMap && context.id in ctxMap) {
+    return ctxMap[context.id] as T;
   }
   return context.defaultValue;
 }
@@ -128,15 +132,23 @@ export function Provider<T>(props: { context: Context<T>; value: T; children?: V
   return props.children ?? null;
 }
 
+/** @internal Register an AsyncLocalStorage-compatible store for concurrent async SSR. */
+export function _setAsyncContextStorage(storage: AsyncContextStorage | null): void {
+  asyncContextStorage = storage;
+}
+
 /** @internal Execute `fn` with a specific prototype-chained context map (used by SSR & client runner). */
 export function _runWithContext<R>(map: Record<symbol, any> | null, fn: () => R): R {
-  const prev = activeContextMap;
-  activeContextMap = map;
-  try {
-    return fn();
-  } finally {
-    activeContextMap = prev;
-  }
+  const runSync = () => {
+    const prev = activeContextMap;
+    activeContextMap = map;
+    try {
+      return fn();
+    } finally {
+      activeContextMap = prev;
+    }
+  };
+  return asyncContextStorage ? asyncContextStorage.run(map, runSync) : runSync();
 }
 
 // =============================================================================
@@ -150,7 +162,12 @@ export function _slot(tpl: CompiledTemplate, values: readonly any[], key?: unkno
   return key !== undefined ? { [SLOT]: tpl, v: values, k: key } : { [SLOT]: tpl, v: values };
 }
 
-export function _comp<P>(fn: ComponentFn<P>, props: P = {} as P, key?: unknown, src?: string): CompView<P> {
+export function _comp<P>(
+  fn: ComponentFn<P>,
+  props: P = {} as P,
+  key?: unknown,
+  src?: string,
+): CompView<P> {
   const resolvedSrc = src ?? (fn as any)?.__asterSrc;
   const node: any = { [COMP]: fn, p: props };
   if (key !== undefined) node.k = key;
@@ -159,11 +176,37 @@ export function _comp<P>(fn: ComponentFn<P>, props: P = {} as P, key?: unknown, 
 }
 
 const SVG_CHILD_TAGS = new Set([
-  'path', 'circle', 'rect', 'line', 'polyline', 'polygon', 'ellipse', 'g',
-  'text', 'tspan', 'textPath', 'defs', 'use', 'symbol', 'linearGradient',
-  'radialGradient', 'stop', 'clipPath', 'mask', 'pattern', 'filter',
-  'feBlend', 'feColorMatrix', 'feGaussianBlur', 'feOffset', 'feMerge',
-  'feMergeNode', 'foreignObject', 'image', 'marker', 'animate',
+  'path',
+  'circle',
+  'rect',
+  'line',
+  'polyline',
+  'polygon',
+  'ellipse',
+  'g',
+  'text',
+  'tspan',
+  'textPath',
+  'defs',
+  'use',
+  'symbol',
+  'linearGradient',
+  'radialGradient',
+  'stop',
+  'clipPath',
+  'mask',
+  'pattern',
+  'filter',
+  'feBlend',
+  'feColorMatrix',
+  'feGaussianBlur',
+  'feOffset',
+  'feMerge',
+  'feMergeNode',
+  'foreignObject',
+  'image',
+  'marker',
+  'animate',
 ]);
 
 const TABLE_WRAPPERS: Record<string, [string, string, number]> = {
@@ -227,7 +270,11 @@ function pathToNode(root: Node, path: readonly number[]): Node {
  * `<!--aster-s:N-->...<!--aster:N-->` dynamic range markers. Skips dynamic slot interiors
  * so logical child indices match the compiled `<template>` 1-to-1.
  */
-function claimPathToNode(root: Node, path: readonly number[], rangeStart: Node | null): Node | null {
+function claimPathToNode(
+  root: Node,
+  path: readonly number[],
+  rangeStart: Node | null,
+): Node | null {
   let cur: Node = root;
   for (let level = 0; level < path.length; level++) {
     const targetIdx = path[level];
@@ -348,7 +395,10 @@ export function html(strings: TemplateStringsArray, ...values: any[]): SlotView 
     template.innerHTML = markup;
     const frag = template.content;
     const bindings: SlotBinding[] = new Array(slots.length);
-    const walker = document.createTreeWalker(frag, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT);
+    const walker = document.createTreeWalker(
+      frag,
+      NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT,
+    );
     const cleanup: [Element, string][] = [];
 
     let node: Node | null;
@@ -371,7 +421,13 @@ export function html(strings: TemplateStringsArray, ...values: any[]): SlotView 
     }
     for (const [el, marker] of cleanup) el.removeAttribute(marker);
 
-    cached = { html: template.innerHTML, bindings, _tpl: template, rawStrings: strings, rawSlots: slots };
+    cached = {
+      html: template.innerHTML,
+      bindings,
+      _tpl: template,
+      rawStrings: strings,
+      rawSlots: slots,
+    };
     tplCache.set(strings, cached);
   }
   return _slot(cached, values);
@@ -433,7 +489,15 @@ function toKebab(prop: string): string {
   return prop.startsWith('--') ? prop : prop.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase());
 }
 
-function setAttr(el: any, name: string, next: any, prev: any, owner: Owner | null, state: any, claiming: boolean) {
+function setAttr(
+  el: any,
+  name: string,
+  next: any,
+  prev: any,
+  owner: Owner | null,
+  state: any,
+  claiming: boolean,
+) {
   if (name === 'key' || name === 'children') return;
 
   if (name === 'ref') {
@@ -444,7 +508,10 @@ function setAttr(el: any, name: string, next: any, prev: any, owner: Owner | nul
     return;
   }
 
-  if (name.startsWith('on:') || (name.startsWith('on') && name.length > 2 && name[2] === name[2].toUpperCase())) {
+  if (
+    name.startsWith('on:') ||
+    (name.startsWith('on') && name.length > 2 && name[2] === name[2].toUpperCase())
+  ) {
     const evName = name.startsWith('on:') ? name.slice(3) : name.slice(2).toLowerCase();
     state.fn = next;
     if (!state.bound) {
@@ -473,7 +540,10 @@ function setAttr(el: any, name: string, next: any, prev: any, owner: Owner | nul
     if (claiming && !state.bound) {
       if (name === 'bind:checked') set?.(Boolean(el.checked));
       else if (name === 'bind:open') set?.(Boolean(el.open));
-      else if (el.value !== '' && el.value !== String((typeof get === 'function' ? get() : get) ?? '')) {
+      else if (
+        el.value !== '' &&
+        el.value !== String((typeof get === 'function' ? get() : get) ?? '')
+      ) {
         set?.(el.type === 'number' || el.type === 'range' ? Number(el.value) : el.value);
       }
     }
@@ -494,15 +564,23 @@ function setAttr(el: any, name: string, next: any, prev: any, owner: Owner | nul
     }
 
     if (!state.bound) {
-      const ev = name === 'bind:open'
-        ? (el.tagName === 'DIALOG' ? 'close' : 'toggle')
-        : (name === 'bind:checked' || el.tagName === 'SELECT' ? 'change' : 'input');
+      const ev =
+        name === 'bind:open'
+          ? el.tagName === 'DIALOG'
+            ? 'close'
+            : 'toggle'
+          : name === 'bind:checked' || el.tagName === 'SELECT'
+            ? 'change'
+            : 'input';
       state.bound = () => {
-        const raw = name === 'bind:checked'
-          ? el.checked
-          : name === 'bind:open'
-            ? el.open
-            : (el.type === 'number' || el.type === 'range' ? Number(el.value) : el.value);
+        const raw =
+          name === 'bind:checked'
+            ? el.checked
+            : name === 'bind:open'
+              ? el.open
+              : el.type === 'number' || el.type === 'range'
+                ? Number(el.value)
+                : el.value;
         state.set?.(raw);
         owner?.schedule();
       };
@@ -561,7 +639,14 @@ function setAttr(el: any, name: string, next: any, prev: any, owner: Owner | nul
   }
 }
 
-function setSpread(el: any, next: any, prev: any, owner: Owner | null, state: any, claiming: boolean) {
+function setSpread(
+  el: any,
+  next: any,
+  prev: any,
+  owner: Owner | null,
+  state: any,
+  claiming: boolean,
+) {
   const nextObj = next && typeof next === 'object' ? next : null;
   const prevObj = prev && typeof prev === 'object' ? prev : null;
   if (!state.keys) state.keys = {};
@@ -695,7 +780,8 @@ function wrapChildProps(props: any, parentOwner: Owner | null): any {
     const val = props[key];
     if (
       typeof val === 'function' &&
-      (key.startsWith('on:') || (key.startsWith('on') && key.length > 2 && key[2] === key[2].toUpperCase()))
+      (key.startsWith('on:') ||
+        (key.startsWith('on') && key.length > 2 && key[2] === key[2].toUpperCase()))
     ) {
       if (!wrapped) wrapped = { ...props };
       wrapped[key] = (...args: any[]) => {
@@ -856,7 +942,7 @@ function mountArrayEntry(item: any, key: unknown, before: Node, owner: Owner | n
 }
 
 /** O(n log n) Longest Increasing Subsequence of positive entries (0 = newly mounted, ignored). */
-function getLongestIncreasingSubsequence(arr: readonly number[]): number[] {
+function getLongestIncreasingSubsequence(arr: ArrayLike<number>): number[] {
   const n = arr.length;
   const p = new Int32Array(n);
   const result: number[] = [];
@@ -920,7 +1006,9 @@ function patchArray(anchor: Node, items: readonly any[], state: any, owner: Owne
     let k = getItemKey(items[i], i);
     if (seenKeys.has(k)) {
       if (__DEV__) {
-        console.warn(`[Aster] Duplicate key "${String(k)}" detected in list. Ensure every item has a unique key.`);
+        console.warn(
+          `[Aster] Duplicate key "${String(k)}" detected in list. Ensure every item has a unique key.`,
+        );
       }
       k = Symbol(`dup:${String(k)}:${i}`);
     }
@@ -1095,7 +1183,9 @@ export function mountComponent(
   parentContext: Record<symbol, any> | null = null,
 ): ComponentHandle {
   let claimRange: ClaimRange | undefined = claimTarget
-    ? ('parent' in claimTarget ? claimTarget : { parent: claimTarget, start: null, end: null })
+    ? 'parent' in claimTarget
+      ? claimTarget
+      : { parent: claimTarget, start: null, end: null }
     : undefined;
 
   const start = document.createComment('');
@@ -1211,7 +1301,7 @@ export function mountComponent(
           if (__DEV__ && out.done && out.value !== undefined && out.value !== null) {
             console.warn(
               `[Aster] Generator component "${activeFn.name || 'anonymous'}" returned on its first render. ` +
-              `Wrap your yield in \`for (props of ctx) { yield ... }\` or \`for (;;) { yield ... }\` so it stays reactive.`,
+                `Wrap your yield in \`for (props of ctx) { yield ... }\` or \`for (;;) { yield ... }\` so it stays reactive.`,
             );
           }
           if (!out.done || out.value !== undefined) applyResult(out.value);
@@ -1272,12 +1362,16 @@ export function mountComponent(
     clearDeps();
     ac.abort();
     if (gen && typeof gen.return === 'function') {
-      try { gen.return(); } catch (_) {}
+      try {
+        gen.return();
+      } catch (_) {}
     }
     gen = null;
     isAsync = false;
     for (const cb of cleanups) {
-      try { cb(); } catch (_) {}
+      try {
+        cb();
+      } catch (_) {}
     }
     cleanups = new Set();
     ac = new AbortController();
@@ -1285,7 +1379,8 @@ export function mountComponent(
 
   let unregisterHmr: (() => void) | null = null;
   if (__DEV__) {
-    const hmrId: string | undefined = (activeFn as any)?.__asterHmrId ?? (activeFn as any)?.__asterSrc;
+    const hmrId: string | undefined =
+      (activeFn as any)?.__asterHmrId ?? (activeFn as any)?.__asterSrc;
     unregisterHmr = registerHmr(hmrId, {
       replace(nextFn: ComponentFn) {
         if (disposed) return;
@@ -1384,7 +1479,11 @@ export function* ErrorBoundary(
       yield props.fallback(caught, reset);
       continue;
     }
-    yield _comp(BoundaryInner, { children: props.children, __asterOnError: handleChildError }, epoch);
+    yield _comp(
+      BoundaryInner,
+      { children: props.children, __asterOnError: handleChildError },
+      epoch,
+    );
   }
 }
 
@@ -1408,12 +1507,20 @@ function coerceAttr(raw: string | null, type: PropType): any {
   if (type === 'number') return Number(raw);
   if (type === 'boolean') return raw !== 'false';
   if (type === 'json') {
-    try { return JSON.parse(raw); } catch { return undefined; }
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return undefined;
+    }
   }
   return raw;
 }
 
-export function defineElement<P = any>(tagName: string, Component: ComponentFn<P>, options: DefineElementOptions = {}): CustomElementConstructor {
+export function defineElement<P = any>(
+  tagName: string,
+  Component: ComponentFn<P>,
+  options: DefineElementOptions = {},
+): CustomElementConstructor {
   const existing = customElements.get(tagName) as any;
   if (existing) {
     if (typeof existing._asterHotUpdate === 'function') {
@@ -1484,7 +1591,9 @@ export function defineElement<P = any>(tagName: string, Component: ComponentFn<P
 
   for (const name of propNames) {
     Object.defineProperty(AsterCustomElement.prototype, name, {
-      get() { return this._props[name]; },
+      get() {
+        return this._props[name];
+      },
       set(val: any) {
         this._props[name] = val;
         this._inst?.update({ ...this._props });

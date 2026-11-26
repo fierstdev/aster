@@ -9,7 +9,10 @@ Aster eliminates the split between "framework component" and "Web Component." Yo
 ```tsx
 import { defineElement, css, type Ctx } from '@fierst/aster';
 
-export function* Counter(props: { start?: number; label?: string }, ctx: Ctx<{ start?: number; label?: string }>) {
+export function* Counter(
+  props: { start?: number; label?: string },
+  ctx: Ctx<{ start?: number; label?: string }>,
+) {
   let count = props.start ?? 0;
   for (props of ctx) {
     yield (
@@ -37,6 +40,7 @@ defineElement('aster-counter', Counter, {
 ```
 
 ### What `defineElement()` Handles Automatically
+
 - **Typed Attribute Coercion:** Declaring `{ start: 'number', open: 'boolean', config: 'json' }` parses HTML string attributes before passing them into `Counter`—your component never writes `Number(props.start)`.
 - **JS Property Sync:** Setting `el.label = 'Score'` in JavaScript or `el.setAttribute('label', 'Score')` in HTML both push fresh props into `for (props of ctx)`.
 - **Automatic Cleanup:** `disconnectedCallback()` calls `gen.return()` and aborts `ctx.signal`, executing your component's `try / finally` block cleanly.
@@ -56,7 +60,12 @@ defineElement('aster-counter', Counter, {
   `;
 
   export function Card({ title, children }: any) {
-    return <section class={cardClass}><h3>{title}</h3>{children}</section>;
+    return (
+      <section class={cardClass}>
+        <h3>{title}</h3>
+        {children}
+      </section>
+    );
   }
   ```
 - **Shadow DOM (`css` or CSS Module Scripts):** Ideal for portable Web Components (`defineElement(..., { shadow: true, styles })`) where strict style encapsulation is desired.

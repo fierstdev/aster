@@ -27,6 +27,7 @@ Aster implements **100% Automatic Event-Delegated Lazy Revival** at the **compon
 ## Consequences
 
 ### Positive
+
 - **Zero manual syntax:** Write ordinary `export function* Counter(...)` and `<Counter start={10} />`—resumability just works.
 - **O(1) startup cost:** Pages execute only the ~520 B delegated listener until the user interacts.
 - **Stateless components stay 0 KB:** Presentational `function` components render to pure HTML and never load JS on the client.

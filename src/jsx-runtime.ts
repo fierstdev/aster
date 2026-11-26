@@ -1,5 +1,13 @@
 // Aster JSX Runtime & TypeScript 7.x Type Definitions
-import { _comp, _slot, _tpl, type ComponentFn, type CompiledTemplate, type SlotBinding, type View } from './runtime.ts';
+import {
+  _comp,
+  _slot,
+  _tpl,
+  type ComponentFn,
+  type CompiledTemplate,
+  type SlotBinding,
+  type View,
+} from './runtime.ts';
 
 export { _comp, _slot, _tpl } from './runtime.ts';
 
@@ -8,8 +16,20 @@ export function Fragment(props: { children?: View }): View {
 }
 
 const VOID_TAGS = new Set([
-  'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
-  'link', 'meta', 'param', 'source', 'track', 'wbr',
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr',
 ]);
 
 const fallbackTplCache = new Map<string, CompiledTemplate>();
@@ -73,13 +93,7 @@ export namespace JSX {
 
   export type ElementType =
     | keyof IntrinsicElements
-    | ((
-        props: any,
-        ctx: any,
-      ) =>
-        | View
-        | Generator<View, any, any>
-        | AsyncGenerator<View, any, any>);
+    | ((props: any, ctx: any) => View | Generator<View, any, any> | AsyncGenerator<View, any, any>);
 
   export interface ElementChildrenAttribute {
     children: {};

@@ -9,7 +9,10 @@ import { compileModule, type CompileOptions } from './compiler.ts';
 
 export type FilterPattern = string | RegExp;
 
-export interface AsterPluginOptions extends Omit<CompileOptions, 'moduleUrl' | 'hmr' | 'sourceFile'> {
+export interface AsterPluginOptions extends Omit<
+  CompileOptions,
+  'moduleUrl' | 'hmr' | 'sourceFile'
+> {
   /** File extensions or path patterns to transform (default: ['.tsx', '.jsx']) */
   include?: readonly FilterPattern[];
   /** Optional path patterns to skip (useful in multi-framework Astro projects) */
@@ -24,9 +27,12 @@ function matchesPattern(id: string, pattern: FilterPattern): boolean {
   if (pattern.includes('*')) {
     const escaped = pattern
       .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-      .replace(/\*\*/g, '.*')
-      .replace(/\*/g, '[^/]*');
-    return new RegExp(escaped).test(id);
+      .replace(/\*\*\//g, '\0DS\0')
+      .replace(/\*\*/g, '\0D\0')
+      .replace(/\*/g, '[^/]*')
+      .replace(/\0DS\0/g, '(?:.*/)?')
+      .replace(/\0D\0/g, '.*');
+    return new RegExp(`${escaped}$`).test(id);
   }
   return id.includes(pattern);
 }
@@ -59,7 +65,12 @@ export function aster(options: AsterPluginOptions = {}) {
         },
       };
     },
-    configResolved(config: { root?: string; base?: string; command?: string; build?: { ssr?: unknown } }) {
+    configResolved(config: {
+      root?: string;
+      base?: string;
+      command?: string;
+      build?: { ssr?: unknown };
+    }) {
       rootDir = (config.root ?? '').replace(/\\/g, '/').replace(/\/$/, '');
       base = config.base ?? '/';
       isBuild = config.command === 'build';

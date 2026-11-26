@@ -65,8 +65,20 @@ interface JSXEl {
 type JSXChild = JSXEl | { kind: 'text'; text: string } | { kind: 'expr'; code: string };
 
 const VOID_TAGS = new Set([
-  'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
-  'link', 'meta', 'param', 'source', 'track', 'wbr',
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr',
 ]);
 
 function isEmptyOrCommentOnly(code: string): boolean {
@@ -83,7 +95,7 @@ function isEmptyOrCommentOnly(code: string): boolean {
 const VLQ_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 function encodeVLQ(value: number): string {
-  let v = value < 0 ? ((-value) << 1) + 1 : value << 1;
+  let v = value < 0 ? (-value << 1) + 1 : value << 1;
   let out = '';
   do {
     let digit = v & 31;
@@ -408,6 +420,19 @@ class JSXLowerer {
     }
   }
 
+  private cleanJsxText(raw: string): string {
+    if (!/[\r\n]/.test(raw)) return raw;
+    const lines = raw.split(/\r\n|\n|\r/);
+    const cleaned: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i].replace(/\t/g, ' ');
+      if (i > 0) line = line.trimStart();
+      if (i < lines.length - 1) line = line.trimEnd();
+      if (line.length > 0) cleaned.push(line);
+    }
+    return cleaned.join(' ');
+  }
+
   parseJSXChildren(closingTag: string): JSXChild[] {
     const children: JSXChild[] = [];
     const closeMarker = `</${closingTag}>`;
@@ -444,25 +469,27 @@ class JSXLowerer {
       }
 
       let text = '';
-      while (this.pos < this.src.length && this.src[this.pos] !== '<' && this.src[this.pos] !== '{') {
+      while (
+        this.pos < this.src.length &&
+        this.src[this.pos] !== '<' &&
+        this.src[this.pos] !== '{'
+      ) {
         text += this.src[this.pos];
         this.advance(1);
       }
-      const cleaned = text.replace(/\r?\n\s*/g, ' ');
-      if (cleaned.trim() !== '') {
+      const cleaned = this.cleanJsxText(text);
+      if (cleaned !== '') {
         this.pushText(children, cleaned);
-      } else if (cleaned === ' ' && children.length > 0) {
-        // Avoid trailing whitespace-only text right before closing tag
-        if (!this.src.startsWith('</', this.pos)) {
-          this.pushText(children, ' ');
-        }
       }
     }
     return children;
   }
 
   isComponentTag(tag: string): boolean {
-    return tag.length > 0 && ((tag[0] === tag[0].toUpperCase() && tag[0] !== tag[0].toLowerCase()) || tag.includes('.'));
+    return (
+      tag.length > 0 &&
+      ((tag[0] === tag[0].toUpperCase() && tag[0] !== tag[0].toLowerCase()) || tag.includes('.'))
+    );
   }
 
   emitJSX(el: JSXEl): string {
@@ -496,7 +523,9 @@ class JSXLowerer {
         propParts.push(`children: [${el.children.map((c) => this.emitSingleChild(c)).join(', ')}]`);
       }
       const propsObj = propParts.length ? `{ ${propParts.join(', ')} }` : '{}';
-      return keyExpr ? `_comp(${el.tag}, ${propsObj}, ${keyExpr})` : `_comp(${el.tag}, ${propsObj})`;
+      return keyExpr
+        ? `_comp(${el.tag}, ${propsObj}, ${keyExpr})`
+        : `_comp(${el.tag}, ${propsObj})`;
     }
 
     this.usedHelpers.add('_tpl');
@@ -519,13 +548,21 @@ class JSXLowerer {
           if (path.length === 1) keyExpr = a.isExpr ? a.value! : JSON.stringify(a.value);
           continue;
         }
-        if (!a.isExpr) {
+        const isDirective =
+          a.name.startsWith('var:') || a.name.startsWith('style:') || a.name.startsWith('class:');
+        if (!a.isExpr && !isDirective) {
           const attrName = a.name === 'className' ? 'class' : a.name;
-          open += a.value === null ? ` ${attrName}` : ` ${attrName}="${a.value.replace(/"/g, '&quot;')}"`;
+          open +=
+            a.value === null ? ` ${attrName}` : ` ${attrName}="${a.value.replace(/"/g, '&quot;')}"`;
         } else {
           const idx = bindings.length;
           bindings.push({ kind: 'attr', name: a.name, path: [...path] });
-          values.push(this.lowerAttrExpr(a.name, a.value!));
+          const expr = a.isExpr
+            ? this.lowerAttrExpr(a.name, a.value!)
+            : a.value === null
+              ? 'true'
+              : JSON.stringify(a.value);
+          values.push(expr);
           open += ` data-aster-a${idx}=""`;
         }
       }
@@ -600,7 +637,8 @@ function collectExportedComponents(jsBody: string) {
   }
 
   // 2. Variable expression generators: `export const Name = [async] function* (...)`
-  const genExprRe = /\bexport\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function\s*\*/g;
+  const genExprRe =
+    /\bexport\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function\s*\*/g;
   while ((m = genExprRe.exec(jsBody)) !== null) {
     const name = m[1];
     if (seen.has(name)) continue;
@@ -617,7 +655,8 @@ function collectExportedComponents(jsBody: string) {
     stateless.push({ name, exportKey: /\bexport\s+default\b/.test(m[0]) ? 'default' : name });
   }
 
-  const arrowRe = /\bexport\s+(?:const|let|var)\s+([A-Z][\w$]*)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/g;
+  const arrowRe =
+    /\bexport\s+(?:const|let|var)\s+([A-Z][\w$]*)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/g;
   while ((m = arrowRe.exec(jsBody)) !== null) {
     const name = m[1];
     if (seen.has(name)) continue;
@@ -641,11 +680,15 @@ export function compileModule(source: string, options: CompileOptions = {}): Com
   const footer: string[] = [];
   if (options.moduleUrl) {
     for (const g of generators) {
-      footer.push(`${g.name}.__asterSrc = ${JSON.stringify(`${options.moduleUrl}#${g.exportKey}`)};`);
+      footer.push(
+        `${g.name}.__asterSrc = ${JSON.stringify(`${options.moduleUrl}#${g.exportKey}`)};`,
+      );
     }
     if (options.hmr) {
       for (const s of stateless) {
-        footer.push(`${s.name}.__asterHmrId = ${JSON.stringify(`${options.moduleUrl}#${s.exportKey}`)};`);
+        footer.push(
+          `${s.name}.__asterHmrId = ${JSON.stringify(`${options.moduleUrl}#${s.exportKey}`)};`,
+        );
       }
       // Inject self-accepting HMR handler for component modules (skip entry files that call top-level `render(`)
       const hasComponents = generators.length > 0 || stateless.length > 0;

@@ -51,6 +51,7 @@ You never wrap components in `island()`, `$`, or `client:visible`. When `@fierst
 - During SSR (`renderToString(view, { revive: true })` or `htmlResponse()`), Aster automatically wraps the outermost stamped generator in `<aster-island data-aster-src="..." data-aster-props="...">`.
 
 On page load, only ~520 B of `@fierst/aster/revive` runs:
+
 1. Hovering (`pointerenter`) or focusing (`focusin`) inside an island preloads its ES module via `<link rel="modulepreload">`.
 2. On first `click`, `input`, `change`, or `submit`, only that island imports its module, calls `claim()` to attach directly onto the existing SSR DOM in-place, preserves any text already typed into inputs, and replays the event.
 3. Need a component (like a live WebSocket ticker) to wake up before any user interaction? Add `data-aster-eager` to its container element.
@@ -77,6 +78,7 @@ During development, `@fierst/aster/vite` injects self-accepting `import.meta.hot
 ### Async & Out-of-Order Streaming SSR (`renderToStringAsync` & `renderToStream`)
 
 When your tree contains `async function*` components:
+
 - Use **`renderToStringAsync(view, opts)`** to await every async generator to completion and return a single resolved HTML string.
 - Use **`renderToStream(view, opts)`** / **`streamResponse(view, opts)`** for instant TTFB: Aster streams the initial HTML shell with each `async function*`'s first yielded loading skeleton immediately, then flushes self-cleaning `<template>` + `<script>` swap chunks out-of-order as each async component resolves:
 

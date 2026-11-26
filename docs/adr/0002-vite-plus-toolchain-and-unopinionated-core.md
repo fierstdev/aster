@@ -22,9 +22,11 @@ Aster adopts **Vite+ (`vp`) as its first-class default toolchain**, while keepin
 ## Consequences
 
 ### Positive
+
 - **Zero syntax edge cases:** Rust Oxc handles all TypeScript 7.x syntax natively.
 - **Full npm & CSS ecosystem parity:** Any npm package, CSS Module, Lightning CSS, Tailwind, or Cloudflare Vite plugin works out of the box.
 - **Minimal, maintainable codebase:** 8 focused files in `src/` instead of fighting custom CLI and transpiler plumbing.
 
 ### Negative & Mitigations
+
 - **Requires `vp` for `.tsx` development:** Mitigated by `vp`'s single-line installer (`curl -fsSL https://vite.plus | bash`), automatic Node management, and `vp pack` emitting standalone browser ESM modules for zero-build `html`...`` usage.

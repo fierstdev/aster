@@ -23,7 +23,9 @@ export function* Counter(props: { start?: number; label?: string }, ctx: Ctx) {
           {props.label ?? 'Clicks'}: {count} (+{step})
         </button>
         <span class="pill">2x = {doubled}</span>
-        <button class="btn" onClick={() => (count = props.start ?? 0)}>Reset</button>
+        <button class="btn" onClick={() => (count = props.start ?? 0)}>
+          Reset
+        </button>
       </div>
     );
   }
@@ -33,10 +35,36 @@ defineElement('aster-counter', Counter, {
   props: { start: 'number', label: 'string' },
   shadow: true,
   styles: css`
-    .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; font-family: system-ui, sans-serif; }
-    .btn { padding: 0.45rem 0.9rem; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; cursor: pointer; font-size: 0.86rem; font-weight: 500; }
-    .btn.primary { background: #0055ff; color: #fff; border-color: #0055ff; }
-    .pill { font-family: ui-monospace, monospace; font-size: 0.74rem; padding: 0.2rem 0.55rem; border-radius: 999px; background: #f8fafc; border: 1px solid #e2e8f0; color: #526071; }
+    .row {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      flex-wrap: wrap;
+      font-family: system-ui, sans-serif;
+    }
+    .btn {
+      padding: 0.45rem 0.9rem;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      cursor: pointer;
+      font-size: 0.86rem;
+      font-weight: 500;
+    }
+    .btn.primary {
+      background: #0055ff;
+      color: #fff;
+      border-color: #0055ff;
+    }
+    .pill {
+      font-family: ui-monospace, monospace;
+      font-size: 0.74rem;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      color: #526071;
+    }
   `,
 });
 
@@ -65,7 +93,9 @@ function* HeroLiveCounter() {
         <button class="btn primary" onClick={() => count++}>
           Clicks: {count} (2x = {doubled})
         </button>
-        <button class="btn" onClick={() => (count = 0)} disabled={count === 0}>Reset</button>
+        <button class="btn" onClick={() => (count = 0)} disabled={count === 0}>
+          Reset
+        </button>
       </div>
     );
   }
@@ -91,17 +121,26 @@ export function* HomeView() {
             <span class="eyebrow">Aster by Fierst LLC · Zero Runtime Dependencies</span>
             <h1>The browser-native generator framework.</h1>
             <p class="lead">
-              Write stateful UI with plain <code>let</code> inside <code>function*</code>, delegate multi-step flows
-              with <code>yield*</code>, and ship ~520 B automatic Lazy Revival SSR—powered by Vite+.
+              Write stateful UI with plain <code>let</code> inside <code>function*</code>, delegate
+              multi-step flows with <code>yield*</code>, and ship ~520 B automatic Lazy Revival
+              SSR—powered by Vite+.
             </p>
             <div class="install-bar">
               <span>$ vp dlx @fierst/aster my-app</span>
-              <button class="btn" onClick={copyInstall}>{copied ? 'Copied' : 'Copy'}</button>
+              <button class="btn" onClick={copyInstall}>
+                {copied ? 'Copied' : 'Copy'}
+              </button>
             </div>
             <div class="row" style="margin-top:1.15rem">
-              <a class="btn primary" href="/learn">Start Interactive Tutorial</a>
-              <a class="btn" href="/showcase">Explore Showcase</a>
-              <a class="btn" href="/docs">Docs &amp; llms.txt</a>
+              <a class="btn primary" href="/learn">
+                Start Interactive Tutorial
+              </a>
+              <a class="btn" href="/showcase">
+                Explore Showcase
+              </a>
+              <a class="btn" href="/docs">
+                Docs &amp; llms.txt
+              </a>
             </div>
           </div>
 
@@ -119,22 +158,34 @@ export function* HomeView() {
           <div class="grid-cell">
             <span class="eyebrow">01 · Reactivity</span>
             <h3>Plain `let` state</h3>
-            <p class="muted">No `useState`, no `$state`, no `.value`, no `() =&gt;` thunks. Derived values are just `const`.</p>
+            <p class="muted">
+              No `useState`, no `$state`, no `.value`, no `() =&gt;` thunks. Derived values are just
+              `const`.
+            </p>
           </div>
           <div class="grid-cell">
             <span class="eyebrow">02 · Flows</span>
             <h3>Native `yield*` UI</h3>
-            <p class="muted">Confirmation dialogs and multi-step wizards return typed values directly to their caller.</p>
+            <p class="muted">
+              Confirmation dialogs and multi-step wizards return typed values directly to their
+              caller.
+            </p>
           </div>
           <div class="grid-cell">
             <span class="eyebrow">03 · Streaming SSR</span>
             <h3>Automatic Lazy Revival</h3>
-            <p class="muted">Exported `function*` components auto-revive on first interaction (~520 B loader, zero `$` syntax).</p>
+            <p class="muted">
+              Exported `function*` components auto-revive on first interaction (~520 B loader, zero
+              `$` syntax).
+            </p>
           </div>
           <div class="grid-cell">
             <span class="eyebrow">04 · Standards</span>
             <h3>Unified Web Components</h3>
-            <p class="muted">`defineElement()` turns any `function*` into a typed Shadow DOM Custom Element with zero rewrites.</p>
+            <p class="muted">
+              `defineElement()` turns any `function*` into a typed Shadow DOM Custom Element with
+              zero rewrites.
+            </p>
           </div>
         </section>
       </div>
@@ -156,10 +207,16 @@ function* confirmDelete(title: string) {
   while (choice === null) {
     yield (
       <div class="confirm-box">
-        <span>Delete <strong>{title}</strong>?</span>
+        <span>
+          Delete <strong>{title}</strong>?
+        </span>
         <div class="row">
-          <button class="btn" onClick={() => (choice = false)}>Cancel</button>
-          <button class="btn danger" onClick={() => (choice = true)}>Confirm</button>
+          <button class="btn" onClick={() => (choice = false)}>
+            Cancel
+          </button>
+          <button class="btn danger" onClick={() => (choice = true)}>
+            Confirm
+          </button>
         </div>
       </div>
     );
@@ -167,7 +224,10 @@ function* confirmDelete(title: string) {
   return choice;
 }
 
-function* TaskRow(props: { task: Task; onDelete: (id: string) => void; onToggle: () => void }, ctx: Ctx) {
+function* TaskRow(
+  props: { task: Task; onDelete: (id: string) => void; onToggle: () => void },
+  ctx: Ctx,
+) {
   let asking = false;
   for (props of ctx) {
     if (asking) {
@@ -184,7 +244,9 @@ function* TaskRow(props: { task: Task; onDelete: (id: string) => void; onToggle:
           <input type="checkbox" bind:checked={props.task.done} onChange={props.onToggle} />
           <span class:done={props.task.done}>{props.task.title}</span>
         </label>
-        <button class="btn" onClick={() => (asking = true)}>Delete</button>
+        <button class="btn" onClick={() => (asking = true)}>
+          Delete
+        </button>
       </li>
     );
   }
@@ -224,8 +286,12 @@ export function* ShowcaseView() {
             <h2>Unified Component = Shadow DOM Web Component</h2>
             <div class="row">
               <span class="muted">Shared step:</span>
-              <button class="btn" class:primary={step === 1} onClick={() => globalStep.set(1)}>+1</button>
-              <button class="btn" class:primary={step === 5} onClick={() => globalStep.set(5)}>+5</button>
+              <button class="btn" class:primary={step === 1} onClick={() => globalStep.set(1)}>
+                +1
+              </button>
+              <button class="btn" class:primary={step === 5} onClick={() => globalStep.set(5)}>
+                +5
+              </button>
             </div>
           </div>
           <input bind:value={label} placeholder="Live label prop..." />
@@ -240,7 +306,9 @@ export function* ShowcaseView() {
           </div>
           <form onSubmit={add}>
             <input bind:value={draft} placeholder="Add a task..." />
-            <button class="btn primary" disabled={!draft.trim()}>Add</button>
+            <button class="btn primary" disabled={!draft.trim()}>
+              Add
+            </button>
           </form>
           <ul class="list">
             {tasks.map((task) => (
@@ -252,8 +320,11 @@ export function* ShowcaseView() {
         <section class="card">
           <h2>Automatic SSR Lazy Revival Output</h2>
           <p class="muted">
-            Rendered live with <code>renderToString(&lt;Counter start=&#123;10&#125; /&gt;, &#123; revive: true &#125;)</code>—including
-            range anchors for zero-flicker <code>claim()</code>:
+            Rendered live with{' '}
+            <code>
+              renderToString(&lt;Counter start=&#123;10&#125; /&gt;, &#123; revive: true &#125;)
+            </code>
+            —including range anchors for zero-flicker <code>claim()</code>:
           </p>
           <pre class="code">{ssrPreview}</pre>
         </section>
@@ -261,11 +332,19 @@ export function* ShowcaseView() {
         <section class="card">
           <h2>Native 2026 HTML Controls (0 B JS)</h2>
           <p class="muted">
-            <code>&lt;dialog closedby="any"&gt;</code> and <code>popover</code> are typed first-class in <code>@fierst/aster/jsx-runtime</code>.
+            <code>&lt;dialog closedby="any"&gt;</code> and <code>popover</code> are typed
+            first-class in <code>@fierst/aster/jsx-runtime</code>.
           </p>
           <div class="row">
-            <button class="btn" popovertarget="aster-tip">Toggle Native Popover</button>
-            <button class="btn" onClick={() => (document.getElementById('aster-modal') as HTMLDialogElement)?.showModal()}>
+            <button class="btn" popovertarget="aster-tip">
+              Toggle Native Popover
+            </button>
+            <button
+              class="btn"
+              onClick={() =>
+                (document.getElementById('aster-modal') as HTMLDialogElement)?.showModal()
+              }
+            >
               Open Native Dialog
             </button>
           </div>
@@ -274,7 +353,9 @@ export function* ShowcaseView() {
           </div>
           <dialog id="aster-modal" closedby="any">
             <h3>Native &lt;dialog&gt;</h3>
-            <p class="muted">Focus trapping, backdrop blur, and Esc-to-close are built into the browser.</p>
+            <p class="muted">
+              Focus trapping, backdrop blur, and Esc-to-close are built into the browser.
+            </p>
             <form method="dialog" style="margin-top:0.85rem; justify-content:flex-end">
               <button class="btn primary">Close</button>
             </form>
@@ -298,7 +379,11 @@ const CHEAT_SHEET = [
   ['SSR Context', 'createContext / provide / useContext', 'Request-isolated in edge workers'],
   ['Lists', 'items.map((x) => <Row key={x.id} />)', 'O(n log n) LIS minimal DOM moves'],
   ['Web Components', "defineElement('aster-x', Comp, opts)", 'Typed attrs + Shadow DOM + HMR'],
-  ['Streaming SSR', 'streamResponse(<App />, { revive: true })', '~520 B auto Lazy Revival + manifest'],
+  [
+    'Streaming SSR',
+    'streamResponse(<App />, { revive: true })',
+    '~520 B auto Lazy Revival + manifest',
+  ],
 ];
 
 export function* DocsView() {
@@ -330,8 +415,12 @@ export function* DocsView() {
             <tbody>
               {CHEAT_SHEET.map(([concept, idiom, benefit]) => (
                 <tr key={concept}>
-                  <td><strong>{concept}</strong></td>
-                  <td><code>{idiom}</code></td>
+                  <td>
+                    <strong>{concept}</strong>
+                  </td>
+                  <td>
+                    <code>{idiom}</code>
+                  </td>
                   <td class="muted">{benefit}</td>
                 </tr>
               ))}
@@ -350,7 +439,9 @@ export function* DocsView() {
             </button>
           </div>
           <p class="muted">
-            Shipped at the root of the <code>@fierst/aster</code> package so AI coding tools write idiomatic <code>function*</code> and <code>yield*</code> code instead of hallucinating React hooks.
+            Shipped at the root of the <code>@fierst/aster</code> package so AI coding tools write
+            idiomatic <code>function*</code> and <code>yield*</code> code instead of hallucinating
+            React hooks.
           </p>
           <pre class="code">{llmsTxt}</pre>
         </section>
@@ -383,10 +474,18 @@ export function* App() {
               <span class="pill">by Fierst</span>
             </a>
             <nav class="nav">
-              <a href="/" class:active={pathname === '/'}>Home</a>
-              <a href="/learn" class:active={pathname === '/learn'}>Learn</a>
-              <a href="/showcase" class:active={pathname === '/showcase'}>Showcase</a>
-              <a href="/docs" class:active={pathname === '/docs'}>Docs &amp; llms.txt</a>
+              <a href="/" class:active={pathname === '/'}>
+                Home
+              </a>
+              <a href="/learn" class:active={pathname === '/learn'}>
+                Learn
+              </a>
+              <a href="/showcase" class:active={pathname === '/showcase'}>
+                Showcase
+              </a>
+              <a href="/docs" class:active={pathname === '/docs'}>
+                Docs &amp; llms.txt
+              </a>
             </nav>
           </div>
         </header>
@@ -398,12 +497,21 @@ export function* App() {
                 <h3>Recovered from Generator Error</h3>
                 <p class="muted">{String((err as Error)?.message ?? err)}</p>
                 <div>
-                  <button class="btn primary" onClick={reset}>Reset Boundary</button>
+                  <button class="btn primary" onClick={reset}>
+                    Reset Boundary
+                  </button>
                 </div>
               </section>
             )}
           >
-            <Router routes={routes} fallback={() => <section class="card"><h2>404 — Not Found</h2></section>} />
+            <Router
+              routes={routes}
+              fallback={() => (
+                <section class="card">
+                  <h2>404 — Not Found</h2>
+                </section>
+              )}
+            />
           </ErrorBoundary>
         </main>
       </div>

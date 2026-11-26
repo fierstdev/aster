@@ -70,7 +70,7 @@ export default defineConfig({
 
   // Oxlint + TypeScript 7 type-aware checks (`vp check` / `vp lint`)
   lint: {
-    ignorePatterns: ['dist/**'],
+    ignorePatterns: ['dist/**', 'template/**'],
     options: {
       typeAware: true,
       typeCheck: true,

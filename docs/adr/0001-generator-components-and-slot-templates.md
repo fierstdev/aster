@@ -29,12 +29,14 @@ Aster adopts **JavaScript Generator Components (`function*` and `async function*
 ## Consequences
 
 ### Positive
+
 - **Zero VDOM and ~3–4 KB gzipped client core:** Eliminates `store.ts`, `when()`, `not()`, `t`, `<Show>`, `<Switch>`, and `<Match>`.
 - **100% standard TypeScript 7.x (`erasableSyntaxOnly`):** No custom SFC format, no custom LSP, and native TS 7 speed out of the box.
 - **Automatic parent callback refresh:** Wrapping child `on*` props with the parent's microtask scheduler eliminates manual `ctx.refresh()` calls.
 - **Keyed `.map()` lists:** Recognizing `.k` keys on arrays eliminates `<For>` boilerplate.
 
 ### Negative & Mitigations
+
 - **Synchronous re-entrancy (`Generator is already executing`):** Mitigated by never calling `gen.next()` synchronously from an event or signal notification; all updates coalesce via `queueMicrotask()`.
 - **Uncaught errors permanently close a generator (`done: true`):** Mitigated by having `<ErrorBoundary>` re-invoke the component function on `reset()` to create a fresh generator instance.
 - **SSR infinite loops (`for (props of ctx)`):** Mitigated by `renderToString()` advancing the generator exactly once and immediately calling `gen.return()` in a `finally` block so server resources never leak.

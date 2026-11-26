@@ -18,6 +18,7 @@ vp dlx playwright install chromium   # One-time setup for Browser Mode tests
 ```
 
 ### Daily Commands
+
 ```bash
 vp dev                   # Launch site & interactive /learn studio at http://localhost:5173/
 vp check                 # Oxfmt + type-aware Oxlint + TypeScript 7 (`tsgo`)

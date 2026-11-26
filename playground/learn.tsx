@@ -5,11 +5,11 @@ import { mountSandbox } from './sandbox.ts';
 export function* LearnView(_props: Record<string, any>, ctx: Ctx) {
   let activeIndex = 0;
   let code = LESSONS[0].starter;
-  let rightTab: 'preview' | 'compiled' = 'preview';
+  let rightTab = 'preview' as 'preview' | 'compiled';
   let compiledOutput = '';
   let runtimeError: string | null = null;
   let previewEl: HTMLDivElement | null = null;
-  let disposePreview: (() => void) | null = null;
+  let disposePreview = null as (() => void) | null;
 
   const runPreview = () => {
     if (!previewEl) return;
@@ -66,11 +66,15 @@ export function* LearnView(_props: Record<string, any>, ctx: Ctx) {
             </div>
 
             <div class="learn-copy">
-              <span class="eyebrow">Lesson {lesson.number} of {LESSONS.length}</span>
+              <span class="eyebrow">
+                Lesson {lesson.number} of {LESSONS.length}
+              </span>
               <h2>{lesson.title}</h2>
               <p class="muted">{lesson.subtitle}</p>
               {lesson.explanation.map((para, i) => (
-                <p key={i} class="prose-p">{para}</p>
+                <p key={i} class="prose-p">
+                  {para}
+                </p>
               ))}
               <div class="task-callout">
                 <span class="eyebrow">Try It</span>
@@ -80,11 +84,19 @@ export function* LearnView(_props: Record<string, any>, ctx: Ctx) {
 
             <div class="learn-footer">
               <div class="row">
-                <button class="btn" onClick={resetLesson}>Reset</button>
-                <button class="btn" onClick={showSolution}>Solve</button>
+                <button class="btn" onClick={resetLesson}>
+                  Reset
+                </button>
+                <button class="btn" onClick={showSolution}>
+                  Solve
+                </button>
               </div>
               <div class="row">
-                <button class="btn" disabled={!hasPrev} onClick={() => selectLesson(activeIndex - 1)}>
+                <button
+                  class="btn"
+                  disabled={!hasPrev}
+                  onClick={() => selectLesson(activeIndex - 1)}
+                >
                   Prev
                 </button>
                 <button
@@ -124,18 +136,17 @@ export function* LearnView(_props: Record<string, any>, ctx: Ctx) {
               </div>
             </div>
 
-            <textarea
-              class="code-editor"
-              spellcheck="false"
-              value={code}
-              onInput={onCodeInput}
-            />
+            <textarea class="code-editor" spellcheck="false" value={code} onInput={onCodeInput} />
 
             {rightTab === 'preview' ? (
               <div class="preview-panel">
                 <div class="preview-header">
                   <span class="mono-label">Output</span>
-                  {runtimeError ? <span class="pill err">Error</span> : <span class="pill ok">Live</span>}
+                  {runtimeError ? (
+                    <span class="pill err">Error</span>
+                  ) : (
+                    <span class="pill ok">Live</span>
+                  )}
                 </div>
                 {runtimeError ? <pre class="error-pre">{runtimeError}</pre> : null}
                 <div

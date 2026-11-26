@@ -25,7 +25,10 @@ Add `*` to turn any function into a stateful component. Everything **before** `f
 ```tsx
 import { type Ctx } from '@fierst/aster';
 
-export function* Counter(props: { start?: number; label?: string }, ctx: Ctx<{ start?: number; label?: string }>) {
+export function* Counter(
+  props: { start?: number; label?: string },
+  ctx: Ctx<{ start?: number; label?: string }>,
+) {
   // Setup (runs once)
   let count = props.start ?? 0;
 
@@ -53,6 +56,7 @@ export function* Counter(props: { start?: number; label?: string }, ctx: Ctx<{ s
 ```
 
 ### Why There Is No Stale-Closure or Thunk Tax
+
 - **No `()` or `.value`:** `count` is a native `number`.
 - **No `() =>` thunks:** `disabled={!draft.trim()}` is evaluated directly on each yield, and the slot runtime diffs only the flat array of dynamic values.
 - **No `<Show>` or `<For>`:** Plain `if / else` and `items.map((item) => <Row key={item.id} ... />)` work natively.
@@ -71,7 +75,9 @@ export function* SearchBox() {
     yield (
       <div>
         <input bind:value={query} placeholder="Search..." />
-        <button disabled={!query.trim()} onClick={() => (query = '')}>Clear</button>
+        <button disabled={!query.trim()} onClick={() => (query = '')}>
+          Clear
+        </button>
       </div>
     );
   }
@@ -163,4 +169,5 @@ export function App({ user }: { user: { name: string } }) {
 ```
 
 ### Automatic `async function*` Prop Restarts
+
 When an `async function*` component receives new props (e.g. `<UserProfile id={selectedId} />`), Aster automatically aborts its previous `ctx.signal`, runs its `finally` block, and restarts with the updated props—while skipping restarts when parent re-renders pass identical props.

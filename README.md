@@ -24,6 +24,7 @@ vp pack      # Build publishable ESM + .d.ts into dist/
 ```
 
 ## Layout
+
 - `src/` — `index.ts`, `runtime.ts`, `jsx-runtime.ts`, `router.ts`, `ssr.ts`, `revive.ts`, `compiler.ts`, `vite.ts`, `astro/` (`index.ts`, `server.ts`, `client.ts`, `slots.ts`)
 - `playground/` — Multi-page `aster.fierst.dev` site & Svelte-style interactive `/learn` studio
 - `llms.txt` — Concise AI coding assistant reference (shipped in npm package)

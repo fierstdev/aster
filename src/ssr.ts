@@ -6,7 +6,7 @@
 //   - Per-request tree-scoped Context isolation (zero cross-request leakage in edge isolates)
 //   - `renderToStringAsync()` & `renderToStream()` (`ReadableStream`) for `async function*` components
 
-import { SLOT, COMP, _runWithContext, type View } from './runtime.ts';
+import { SLOT, COMP, _runWithContext, _setAsyncContextStorage, type View } from './runtime.ts';
 
 function escapeHtml(str: unknown): string {
   return String(str)
@@ -83,19 +83,19 @@ function applyAttrEntry(
   }
 
   if (name === 'bind:value') {
-    const cur = Array.isArray(val) ? val[0]() : (typeof val === 'function' ? val() : val);
+    const cur = Array.isArray(val) ? val[0]() : typeof val === 'function' ? val() : val;
     if (cur != null && cur !== '') extraAttrs.push(`value="${escapeHtml(cur)}"`);
     return;
   }
 
   if (name === 'bind:checked') {
-    const cur = Array.isArray(val) ? val[0]() : (typeof val === 'function' ? val() : val);
+    const cur = Array.isArray(val) ? val[0]() : typeof val === 'function' ? val() : val;
     if (cur) extraAttrs.push('checked');
     return;
   }
 
   if (name === 'bind:open') {
-    const cur = Array.isArray(val) ? val[0]() : (typeof val === 'function' ? val() : val);
+    const cur = Array.isArray(val) ? val[0]() : typeof val === 'function' ? val() : val;
     if (cur) extraAttrs.push('open');
     return;
   }
@@ -187,7 +187,9 @@ function serializeProps(props: Record<string, unknown> | undefined): string {
       clean[k] = v;
     }
   }
-  return Object.keys(clean).length > 0 ? ` data-aster-props="${escapeHtml(JSON.stringify(clean))}"` : '';
+  return Object.keys(clean).length > 0
+    ? ` data-aster-props="${escapeHtml(JSON.stringify(clean))}"`
+    : '';
 }
 
 /**
@@ -209,9 +211,10 @@ export function resolveIslandSrc(src: string, manifest?: RevivalManifest, base =
 
   const targetFile = typeof entry === 'string' ? entry : entry.file;
   const cleanBase = base.endsWith('/') ? base : base + '/';
-  const resolvedUrl = targetFile.startsWith('/') || /^https?:\/\//.test(targetFile)
-    ? targetFile
-    : `${cleanBase}${targetFile.replace(/^\/+/, '')}`;
+  const resolvedUrl =
+    targetFile.startsWith('/') || /^https?:\/\//.test(targetFile)
+      ? targetFile
+      : `${cleanBase}${targetFile.replace(/^\/+/, '')}`;
   return `${resolvedUrl}${exportSuffix}`;
 }
 
@@ -255,7 +258,11 @@ function wrapSlotNode(idx: number, rendered: string, opts: SSROptions): string {
   return rendered;
 }
 
-function renderRawHtmlTemplateSync(compiled: any, values: readonly any[], opts: SSROptions): string {
+function renderRawHtmlTemplateSync(
+  compiled: any,
+  values: readonly any[],
+  opts: SSROptions,
+): string {
   let out = '';
   let stripQ = '';
   for (let i = 0; i < compiled.rawStrings.length; i++) {
@@ -277,7 +284,9 @@ function renderRawHtmlTemplateSync(compiled: any, values: readonly any[], opts: 
         if (s.name) applyAttrEntry(s.name, val, classes, styles, extra);
         if (classes.size > 0) extra.push(`class="${escapeHtml([...classes].join(' '))}"`);
         if (styles.size > 0) {
-          extra.push(`style="${escapeHtml([...styles.entries()].map(([k, v]) => `${k}:${v}`).join(';'))}"`);
+          extra.push(
+            `style="${escapeHtml([...styles.entries()].map(([k, v]) => `${k}:${v}`).join(';'))}"`,
+          );
         }
         out += chunk + extra.join(' ');
       } else {
@@ -357,7 +366,10 @@ export function renderToString(view: View, opts: SSROptions = {}): string {
     for (let i = 0; i < compiled.bindings.length; i++) {
       const b = compiled.bindings[i];
       if (b.kind === 'node') {
-        htmlStr = htmlStr.replace(`<!--aster:${i}-->`, wrapSlotNode(i, renderToString(view.v[i], opts), opts));
+        htmlStr = htmlStr.replace(
+          `<!--aster:${i}-->`,
+          wrapSlotNode(i, renderToString(view.v[i], opts), opts),
+        );
       }
     }
     return htmlStr;
@@ -369,7 +381,33 @@ export function renderToString(view: View, opts: SSROptions = {}): string {
 // =============================================================================
 // 2. Async SSR (`renderToStringAsync`) — Awaits `async function*` Components
 // =============================================================================
+let alsReady = false;
+let alsInitPromise: Promise<void> | null = null;
+
+function ensureAsyncContextStorage(): Promise<void> {
+  if (!alsInitPromise) {
+    alsInitPromise = (async () => {
+      try {
+        const modId = 'node:async_hooks';
+        const { AsyncLocalStorage } = (await import(/* @vite-ignore */ modId)) as {
+          AsyncLocalStorage: new () => {
+            getStore(): Record<symbol, any> | null | undefined;
+            run<R>(store: Record<symbol, any> | null, fn: () => R): R;
+          };
+        };
+        _setAsyncContextStorage(new AsyncLocalStorage());
+      } catch {
+        // Non-Node environments fall back to synchronous context scoping
+      } finally {
+        alsReady = true;
+      }
+    })();
+  }
+  return alsInitPromise;
+}
+
 export async function renderToStringAsync(view: View, opts: SSROptions = {}): Promise<string> {
+  if (!alsReady) await ensureAsyncContextStorage();
   if (view == null || view === false || view === true) return '';
   if (Array.isArray(view)) {
     const parts = await Promise.all(view.map((item) => renderToStringAsync(item, opts)));
@@ -458,7 +496,9 @@ export async function renderToStringAsync(view: View, opts: SSROptions = {}): Pr
             if (s.name) applyAttrEntry(s.name, val, classes, styles, extra);
             if (classes.size > 0) extra.push(`class="${escapeHtml([...classes].join(' '))}"`);
             if (styles.size > 0) {
-              extra.push(`style="${escapeHtml([...styles.entries()].map(([k, v]) => `${k}:${v}`).join(';'))}"`);
+              extra.push(
+                `style="${escapeHtml([...styles.entries()].map(([k, v]) => `${k}:${v}`).join(';'))}"`,
+              );
             }
             out += chunk + extra.join(' ');
           } else {
@@ -542,7 +582,12 @@ function buildSwapChunk(id: number, finalHtml: string): string {
   );
 }
 
-async function renderStreamNode(view: View, opts: SSROptions, tracker: StreamTracker): Promise<string> {
+async function renderStreamNode(
+  view: View,
+  opts: SSROptions,
+  tracker: StreamTracker,
+): Promise<string> {
+  if (!alsReady) await ensureAsyncContextStorage();
   if (view == null || view === false || view === true) return '';
   if (Array.isArray(view)) {
     const parts = await Promise.all(view.map((item) => renderStreamNode(item, opts, tracker)));
@@ -618,6 +663,7 @@ async function renderStreamNode(view: View, opts: SSROptions, tracker: StreamTra
         innerHtml = await renderStreamNode(
           _runWithContext(localCtx, () => view.p.fallback(err, () => {})),
           childOpts,
+          tracker,
         );
       } else {
         throw err;
@@ -682,7 +728,9 @@ export function renderToStream(view: View, opts: DocumentOptions = {}): Readable
           { revive, manifest: opts.manifest, base: opts.base },
           tracker,
         );
-        controller.enqueue(encoder.encode(`${buildDocOpen(opts)}${body}</div>${buildReviveScript(opts)}`));
+        controller.enqueue(
+          encoder.encode(`${buildDocOpen(opts)}${body}</div>${buildReviveScript(opts)}`),
+        );
 
         // Drain all pending async boundaries (handles nested async boundaries too)
         while (pending.length > 0) {

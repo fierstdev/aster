@@ -27,11 +27,15 @@ describe('SSR, Spread Attrs, & Production Manifest Lazy Revival', () => {
 
   it('resolves hashed production chunk URLs from aster-manifest.json and Vite manifest.json', () => {
     expect(
-      resolveIslandSrc('/src/Counter.tsx#Counter', { '/src/Counter.tsx': '/assets/Counter-Ab12Cd.js' }),
+      resolveIslandSrc('/src/Counter.tsx#Counter', {
+        '/src/Counter.tsx': '/assets/Counter-Ab12Cd.js',
+      }),
     ).toBe('/assets/Counter-Ab12Cd.js#Counter');
 
     expect(
-      resolveIslandSrc('/src/Counter.tsx#Counter', { 'src/Counter.tsx': { file: 'assets/Counter-Xy98Zz.js' } }),
+      resolveIslandSrc('/src/Counter.tsx#Counter', {
+        'src/Counter.tsx': { file: 'assets/Counter-Xy98Zz.js' },
+      }),
     ).toBe('/assets/Counter-Xy98Zz.js#Counter');
 
     const _t1 = _tpl('<button><!--aster:0--></button>', [{ kind: 'node', path: [0, 0] }]);
@@ -142,10 +146,9 @@ describe('Router (URLPattern + SSR)', () => {
       { revive: true },
     );
     expect(html).toContain('<aster-island data-aster-src="/pages/User.tsx#UserPage"');
-    expect(html).toContain('<h1>User 99</h1>');
+    expect(html).toContain('<h1>User <!--aster-s:0-->99<!--aster:0--></h1>');
   });
 });
-
 
 describe('SSR Attribute Merging, Range Anchors, Scoped Context, & Streaming', () => {
   it('merges static class/style with class:*, style:*, and var:* in SSR with zero duplicates', () => {
@@ -159,7 +162,9 @@ describe('SSR Attribute Merging, Range Anchors, Scoped Context, & Streaming', ()
       ],
     );
     const html = renderToString(_slot(_t1, [true, false, '700', '#0071e3']));
-    expect(html).toBe('<button class="btn primary" style="padding:4px;font-weight:700;--accent:#0071e3">Go</button>');
+    expect(html).toBe(
+      '<button class="btn primary" style="padding:4px;font-weight:700;--accent:#0071e3">Go</button>',
+    );
   });
 
   it('emits <!--aster-s:i-->...<!--aster:i--> range anchors inside revived islands only', () => {

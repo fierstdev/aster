@@ -1,7 +1,9 @@
 ## Summary
+
 <!-- Briefly explain what this PR changes and why. -->
 
 ## Type of Change
+
 - [ ] Bug fix
 - [ ] Feature / enhancement
 - [ ] Performance improvement
@@ -9,6 +11,7 @@
 - [ ] Tests / CI
 
 ## Checklist
+
 - [ ] `vp check` passes (formatting, type-aware Oxlint, TypeScript 7 strict)
 - [ ] `vp test` passes (both `node` and `browser` Playwright suites)
 - [ ] `vp pack` succeeds with zero `.d.mts` errors

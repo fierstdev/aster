@@ -3,11 +3,7 @@
     "target": "ES2024",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": [
-      "ES2024",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "strict": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
@@ -16,39 +12,16 @@
     "jsx": "react-jsx",
     "jsxImportSource": "@fierst/aster",
     "paths": {
-      "@fierst/aster": [
-        "./src/index.ts"
-      ],
-      "@fierst/aster/jsx-runtime": [
-        "./src/jsx-runtime.ts"
-      ],
-      "@fierst/aster/router": [
-        "./src/router.ts"
-      ],
-      "@fierst/aster/ssr": [
-        "./src/ssr.ts"
-      ],
-      "@fierst/aster/revive": [
-        "./src/revive.ts"
-      ],
-      "@fierst/aster/vite": [
-        "./src/vite.ts"
-      ],
-      "@fierst/aster/astro": [
-        "./src/astro/index.ts"
-      ],
-      "@fierst/aster/astro/server": [
-        "./src/astro/server.ts"
-      ],
-      "@fierst/aster/astro/client": [
-        "./src/astro/client.ts"
-      ]
+      "@fierst/aster": ["./src/index.ts"],
+      "@fierst/aster/jsx-runtime": ["./src/jsx-runtime.ts"],
+      "@fierst/aster/router": ["./src/router.ts"],
+      "@fierst/aster/ssr": ["./src/ssr.ts"],
+      "@fierst/aster/revive": ["./src/revive.ts"],
+      "@fierst/aster/vite": ["./src/vite.ts"],
+      "@fierst/aster/astro": ["./src/astro/index.ts"],
+      "@fierst/aster/astro/server": ["./src/astro/server.ts"],
+      "@fierst/aster/astro/client": ["./src/astro/client.ts"]
     }
   },
-  "include": [
-    "src",
-    "playground",
-    "tests",
-    "vite.config.ts"
-  ]
+  "include": ["src", "playground", "tests", "vite.config.ts"]
 }

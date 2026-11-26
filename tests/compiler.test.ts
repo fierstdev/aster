@@ -5,17 +5,22 @@ import { renderToString } from '../src/ssr.ts';
 
 describe('Aster JSX-to-Slot Compiler', () => {
   it('hoists static HTML into _tpl() and lowers dynamic slots into _slot()', () => {
-    const out = compileJSX(`
+    const out = compileJSX(
+      `
       export function* Counter(props, ctx) {
         let count = 0;
         for (props of ctx) {
           yield <button class="primary" onClick={() => count++}>Count: {count}</button>;
         }
       }
-    `, { moduleUrl: '/components/Counter.tsx' });
+    `,
+      { moduleUrl: '/components/Counter.tsx' },
+    );
 
     expect(out).toContain("import { _tpl, _slot } from '@fierst/aster';");
-    expect(out).toContain('const _t1 = _tpl("<button class=\\"primary\\" data-aster-a0=\\"\\">Count: <!--aster:1--></button>"');
+    expect(out).toContain(
+      'const _t1 = _tpl("<button class=\\"primary\\" data-aster-a0=\\"\\">Count: <!--aster:1--></button>"',
+    );
     expect(out).toContain('_slot(_t1, [() => count++, count])');
     expect(out).toContain('Counter.__asterSrc = "/components/Counter.tsx#Counter";');
   });
@@ -74,7 +79,8 @@ describe('Aster JSX-to-Slot Compiler', () => {
   });
 
   it('emits valid V3 source maps and dev-mode HMR self-accept wiring', () => {
-    const res = compileModule(`
+    const res = compileModule(
+      `
       export function* Counter(props, ctx) {
         let n = 0;
         for (props of ctx) yield <button onClick={() => n++}>{n}</button>;
@@ -82,7 +88,9 @@ describe('Aster JSX-to-Slot Compiler', () => {
       export function Badge(props) {
         return <span>{props.text}</span>;
       }
-    `, { moduleUrl: '/src/Counter.tsx', hmr: true });
+    `,
+      { moduleUrl: '/src/Counter.tsx', hmr: true },
+    );
 
     expect(res.map.version).toBe(3);
     expect(res.map.sources).toEqual(['/src/Counter.tsx']);
@@ -96,11 +104,14 @@ describe('Aster JSX-to-Slot Compiler', () => {
   });
 
   it('stamps exported default and async generator components automatically', () => {
-    const out = compileJSX(`
+    const out = compileJSX(
+      `
       export default async function* UserCard(props, ctx) {
         yield <div>Loading</div>;
       }
-    `, { moduleUrl: '/UserCard.tsx' });
+    `,
+      { moduleUrl: '/UserCard.tsx' },
+    );
 
     expect(out).toContain('UserCard.__asterSrc = "/UserCard.tsx#default";');
   });
@@ -118,10 +129,10 @@ describe('Aster JSX-to-Slot Compiler', () => {
   });
 });
 
-
 describe('Compiler Expression Exports & JSX Runtime Fallback', () => {
   it('stamps variable expression generators (`export const Widget = function*()`) and arrow stateless components', () => {
-    const res = compileModule(`
+    const res = compileModule(
+      `
       export const Widget = function* (props, ctx) {
         let x = 0;
         for (props of ctx) yield <span>{x}</span>;
@@ -130,7 +141,9 @@ describe('Compiler Expression Exports & JSX Runtime Fallback', () => {
         yield <div>ready</div>;
       };
       export const Pill = ({ text }) => <span class="pill">{text}</span>;
-    `, { moduleUrl: '/src/Widgets.tsx', hmr: true });
+    `,
+      { moduleUrl: '/src/Widgets.tsx', hmr: true },
+    );
 
     expect(res.exportedGenerators).toEqual(['Widget', 'AsyncWidget']);
     expect(res.exportedStateless).toEqual(['Pill']);

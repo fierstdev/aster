@@ -15,7 +15,9 @@ export function* SampleCounter(
     const doubled = count * shared();
     yield (
       <div class="sample">
-        <button onClick={() => count++}>Value: {count} ({doubled})</button>
+        <button onClick={() => count++}>
+          Value: {count} ({doubled})
+        </button>
       </div>
     );
   }
@@ -42,6 +44,6 @@ describe('Vite+ Oxc + Aster TSX Pipeline', () => {
 
     expect(html).toContain('<header class="banner">Hello Aster</header>');
     expect(html).toContain('<aster-island data-aster-src=');
-    expect(html).toContain('Value: 3 (6)');
+    expect(html.replace(/<!--[\s\S]*?-->/g, '')).toContain('Value: 3 (6)');
   });
 });

@@ -37,7 +37,11 @@ export function useSearchParams(): URLSearchParams {
 
 function commitUrl(to: string, transition: boolean) {
   const apply = () => currentUrl.set(to);
-  if (transition && typeof document !== 'undefined' && typeof (document as any).startViewTransition === 'function') {
+  if (
+    transition &&
+    typeof document !== 'undefined' &&
+    typeof (document as any).startViewTransition === 'function'
+  ) {
     (document as any).startViewTransition(apply);
   } else {
     apply();
@@ -68,20 +72,30 @@ export function matchRoute(routes: readonly RouteDef[], urlStr: string): RouteMa
       const res = new URLPatternCtor({ pathname: route.path }).exec({ pathname });
       if (res) {
         const params: Record<string, string> = {};
-        for (const [k, v] of Object.entries(res.pathname.groups as Record<string, string | undefined>)) {
+        for (const [k, v] of Object.entries(
+          res.pathname.groups as Record<string, string | undefined>,
+        )) {
           if (v !== undefined) params[k] = decodeURIComponent(v);
         }
         return { route, params, search: parsed.searchParams, pathname };
       }
     } else {
       const keys: string[] = [];
-      const reStr = '^' + route.path
-        .replace(/\/:([^/]+)/g, (_m, k) => { keys.push(k); return '/([^/]+)'; })
-        .replace(/\*/g, '.*') + '$';
+      const reStr =
+        '^' +
+        route.path
+          .replace(/\/:([^/]+)/g, (_m, k) => {
+            keys.push(k);
+            return '/([^/]+)';
+          })
+          .replace(/\*/g, '.*') +
+        '$';
       const m = pathname.match(new RegExp(reStr));
       if (m) {
         const params: Record<string, string> = {};
-        keys.forEach((k, i) => { params[k] = decodeURIComponent(m[i + 1]); });
+        keys.forEach((k, i) => {
+          params[k] = decodeURIComponent(m[i + 1]);
+        });
         return { route, params, search: parsed.searchParams, pathname };
       }
     }
@@ -109,7 +123,8 @@ export function* Router(
     const nav = (window as any).navigation;
     if (nav && typeof nav.addEventListener === 'function') {
       const onNavigate = (event: any) => {
-        if (!event.canIntercept || event.hashChange || event.downloadRequest || event.formData) return;
+        if (!event.canIntercept || event.hashChange || event.downloadRequest || event.formData)
+          return;
         const dest = new URL(event.destination.url);
         if (dest.origin !== window.location.origin) return;
         const nextUrl = dest.pathname + dest.search;
@@ -123,11 +138,21 @@ export function* Router(
       ctx.onCleanup(() => nav.removeEventListener('navigate', onNavigate));
     } else {
       // Fallback for browsers without Navigation API
-      const onPop = () => commitUrl(window.location.pathname + window.location.search, useTransitions);
+      const onPop = () =>
+        commitUrl(window.location.pathname + window.location.search, useTransitions);
       const onClick = (e: MouseEvent) => {
-        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        if (
+          e.defaultPrevented ||
+          e.button !== 0 ||
+          e.metaKey ||
+          e.ctrlKey ||
+          e.shiftKey ||
+          e.altKey
+        )
+          return;
         const a = (e.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
-        if (!a || a.target || a.hasAttribute('download') || a.hasAttribute('data-aster-reload')) return;
+        if (!a || a.target || a.hasAttribute('download') || a.hasAttribute('data-aster-reload'))
+          return;
         const href = a.getAttribute('href')!;
         if (!href.startsWith('/') || href.startsWith('//')) return;
         e.preventDefault();

@@ -29,7 +29,7 @@ export function mergeAstroProps(
   slots: Record<string, string> | undefined,
   staticSlot = true,
 ): Record<string, any> {
-  const merged: Record<string, any> = { ...(props ?? {}) };
+  const merged: Record<string, any> = { ...props };
   if (!slots) return merged;
 
   for (const [name, html] of Object.entries(slots)) {

@@ -1,4 +1,6 @@
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 body {
   margin: 0;
   font-family: system-ui, -apple-system, sans-serif;
@@ -17,9 +19,20 @@ main {
   display: grid;
   gap: 1rem;
 }
-h1 { margin: 0; font-size: 1.4rem; }
-p { margin: 0; color: #64748b; }
-.row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+h1 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+p {
+  margin: 0;
+  color: #64748b;
+}
+.row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
 button {
   padding: 0.5rem 1rem;
   border-radius: 999px;
@@ -28,4 +41,8 @@ button {
   cursor: pointer;
   font: inherit;
 }
-button.primary { background: #0071e3; color: #fff; border-color: #0071e3; }
+button.primary {
+  background: #0071e3;
+  color: #fff;
+  border-color: #0071e3;
+}
