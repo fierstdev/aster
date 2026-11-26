@@ -22,11 +22,11 @@
   "author": "Fierst LLC <hello@fierst.dev>",
   "repository": {
     "type": "git",
-    "url": "https://github.com/fierstdev/aster.git"
+    "url": "git+https://github.com/fierstdev/aster.git"
   },
   "bin": {
-    "aster": "./bin/create.mjs",
-    "create-aster": "./bin/create.mjs"
+    "aster": "bin/create.mjs",
+    "create-aster": "bin/create.mjs"
   },
   "files": [
     "dist",
@@ -44,6 +44,10 @@
       "import": "./dist/index.mjs"
     },
     "./jsx-runtime": {
+      "types": "./dist/jsx-runtime.d.mts",
+      "import": "./dist/jsx-runtime.mjs"
+    },
+    "./jsx-dev-runtime": {
       "types": "./dist/jsx-runtime.d.mts",
       "import": "./dist/jsx-runtime.mjs"
     },

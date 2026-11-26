@@ -50,7 +50,18 @@ export function scaffoldProject(targetName, cwd = process.cwd(), options = {}) {
   return { targetDir, pkgName, created };
 }
 
-const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const isMain = (() => {
+  if (!process.argv[1]) return false;
+  try {
+    return (
+      fs.realpathSync.native(process.argv[1]) ===
+      fs.realpathSync.native(fileURLToPath(import.meta.url))
+    );
+  } catch {
+    return path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  }
+})();
+
 if (isMain) {
   const args = process.argv.slice(2);
   const force = args.includes('--force');
