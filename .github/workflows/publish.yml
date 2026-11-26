@@ -101,7 +101,7 @@ jobs:
         run: |
           PKG_VER="$(node -p "require('./package.json').version")"
           if echo "$PKG_VER" | grep -qE '-'; then
-            echo "tag=next" >> "$GITHUB_OUTPUT"
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
           else
             echo "tag=latest" >> "$GITHUB_OUTPUT"
           fi
