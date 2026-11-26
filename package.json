@@ -1,0 +1,100 @@
+{
+  "name": "@fierst/aster",
+  "version": "1.0.0-alpha.1",
+  "description": "Browser-native, zero-VDOM web framework by Fierst LLC powered by Generator Components (function*), Slot-Compiled Templates, Unified Web Components, and Automatic Lazy Revival \u2014 built on Vite+.",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    },
+    "./jsx-runtime": {
+      "types": "./dist/jsx-runtime.d.mts",
+      "import": "./dist/jsx-runtime.mjs"
+    },
+    "./router": {
+      "types": "./dist/router.d.mts",
+      "import": "./dist/router.mjs"
+    },
+    "./ssr": {
+      "types": "./dist/ssr.d.mts",
+      "import": "./dist/ssr.mjs"
+    },
+    "./revive": {
+      "types": "./dist/revive.d.mts",
+      "import": "./dist/revive.mjs"
+    },
+    "./vite": {
+      "types": "./dist/vite.d.mts",
+      "import": "./dist/vite.mjs"
+    },
+    "./astro": {
+      "types": "./dist/astro/index.d.mts",
+      "import": "./dist/astro/index.mjs"
+    },
+    "./astro/server": {
+      "types": "./dist/astro/server.d.mts",
+      "import": "./dist/astro/server.mjs"
+    },
+    "./astro/client": {
+      "types": "./dist/astro/client.d.mts",
+      "import": "./dist/astro/client.mjs"
+    }
+  },
+  "files": [
+    "dist",
+    "bin",
+    "template",
+    "llms.txt",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "dev": "vp dev",
+    "build": "vp build",
+    "preview": "vp preview",
+    "pack": "vp pack",
+    "test": "vp test",
+    "check": "vp check",
+    "fmt": "vp fmt",
+    "lint": "vp lint",
+    "create": "node ./bin/create.mjs",
+    "test:node": "vp test --project=node",
+    "test:browser": "vp test --project=browser"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "vite-plus": "^1.0.0",
+    "playwright": "^1.50.0"
+  },
+  "bin": {
+    "aster": "./bin/create.mjs",
+    "create-aster": "./bin/create.mjs"
+  },
+  "keywords": [
+    "aster",
+    "fierst",
+    "framework",
+    "generators",
+    "web-components",
+    "resumability",
+    "streaming-ssr",
+    "vite-plus",
+    "zero-vdom",
+    "astro"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "homepage": "https://aster.fierst.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fierstdev/aster.git"
+  },
+  "bugs": {
+    "url": "https://github.com/fierstdev/aster/issues"
+  },
+  "author": "Fierst LLC <hello@fierst.dev>"
+}

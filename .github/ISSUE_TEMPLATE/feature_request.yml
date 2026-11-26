@@ -1,0 +1,17 @@
+name: Feature Request
+description: Propose an improvement or ADR for Aster
+labels: ['enhancement']
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What real-world problem does this solve? Remember Aster's core rule—subtract before adding, and leverage native browser primitives first.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Design / API
+      description: Show a short code example of how it would look in Aster `.tsx`.
+      render: tsx

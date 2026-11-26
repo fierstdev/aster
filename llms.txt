@@ -1,0 +1,146 @@
+# Aster
+
+> Aster is a tiny, browser-native, zero-VDOM web framework powered by JavaScript Generator Components (`function*` / `async function*`), Slot-Compiled `<template>` Patching, Unified Web Components (`defineElement`), and Automatic Event-Delegated Lazy Revival — built on Vite+ (`vp`) with zero runtime dependencies and zero backend opinions.
+
+## Rules for AI Coding Assistants (Read First)
+
+1. **NEVER use React hooks or VDOM patterns:** No `useState`, `useEffect`, `useMemo`, `useCallback`, `useRef`, or `React.Fragment`.
+2. **NEVER use Solid/Vue reactivity boilerplate for local state:** No `() =>` JSX thunks, no `<Show>` / `<For>`, no `.value`, and no `$state` / `$derived` runes.
+3. **Stateful components are `function*` generators:** Declare local state with plain `let`, run setup before the loop, and yield JSX inside `for (props of ctx)` (or `for (;;)` if the component takes no props).
+4. **Always use `for (props of ctx)` when reading `props`:** Writing `for (;;)` freezes `props` at initial mount; forgetting the loop causes the generator to exit (`done: true`) after the first render.
+5. **Stateless components are plain `function`s:** Zero generator allocation and 0 bytes of client JS in SSR.
+6. **Cleanup uses native `try { ... } finally { ... }`:** Triggered automatically via `gen.return()` on unmount.
+7. **Shared client state uses `signal()`:** Read via `sig()`, write via `sig.set(next)` or `sig.update(fn)`. Reading inside a `function*` auto-subscribes that component.
+8. **SSR-safe subtree state uses Context:** Use `createContext()`, `provide()`, `useContext()`, or `<Provider>` so concurrent server requests never share module-level state.
+9. **Lazy Revival is 100% automatic:** NEVER wrap components in `island()` or `$` syntax. Any `export function*` is automatically stamped with `__asterSrc` by `@fierst/aster/vite`.
+10. **Routing uses plain `<a href="/...">` tags:** NEVER import or invent a `<Link>` component. `<Router>` intercepts same-origin links natively via the browser Navigation API + `URLPattern` + View Transitions.
+11. **External push updates need `ctx.refresh()`:** Event handlers (`onClick`, `onSubmit`, `bind:*`, and child `on*` callbacks) auto-refresh; external timers (`setInterval`, `WebSocket`) call `ctx.refresh()`.
+12. **Native 2026 HTML controls are built-in:** Use `<dialog closedby="any">`, `popover`, `popovertarget`, `commandfor`, `command`, `scope` (`@scope`), and `css` (`CSSStyleSheet`).
+
+## Core API Quick Reference
+
+### Imports
+- `@fierst/aster`: `render`, `claim`, `signal`, `createContext`, `provide`, `useContext`, `Provider`, `ErrorBoundary`, `defineElement`, `css`, `scope`, `html`, `type Ctx`
+- `@fierst/aster/router`: `Router`, `navigate`, `matchRoute`, `useLocation`, `useParams`, `useSearchParams`, `type RouteDef`
+- `@fierst/aster/ssr`: `renderToString`, `renderToStringAsync`, `renderDocument`, `htmlResponse`, `renderToStream`, `streamResponse`, `resolveIslandSrc`
+- `@fierst/aster/revive`: `installRevival`
+- `@fierst/aster/vite`: `aster` (default export Vite+ plugin)
+- `@fierst/aster/astro`: `asterAstro` (default export Astro integration supporting `client:load`, `client:idle`, `client:visible`, `client:media`, `client:only`)
+
+### Canonical Stateful Component (`function*`)
+```tsx
+import { type Ctx } from '@fierst/aster';
+
+export function* Counter(props: { start?: number; label?: string }, ctx: Ctx) {
+  let count = props.start ?? 0;
+
+  for (props of ctx) {
+    const doubled = count * 2;
+    yield (
+      <button onClick={() => count++}>
+        {props.label ?? 'Clicks'}: {count} (2x = {doubled})
+      </button>
+    );
+  }
+}
+```
+
+### Two-Way Form Bindings, Directives, & Keyed Lists
+```tsx
+export function* TodoList() {
+  let draft = '';
+  const items = [{ id: '1', title: 'Ship Aster', done: false }];
+
+  const add = (e: SubmitEvent) => {
+    e.preventDefault();
+    if (!draft.trim()) return;
+    items.unshift({ id: crypto.randomUUID(), title: draft.trim(), done: false });
+    draft = '';
+  };
+
+  for (;;) {
+    yield (
+      <section>
+        <form onSubmit={add}>
+          <input bind:value={draft} placeholder="New task..." />
+          <button disabled={!draft.trim()}>Add</button>
+        </form>
+        <ul>
+          {items.map((item) => (
+            <li key={item.id}>
+              <input type="checkbox" bind:checked={item.done} />
+              <span class:done={item.done}>{item.title}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    );
+  }
+}
+```
+
+### Composable Multi-Step UI Flows (`yield*`)
+```tsx
+function* confirmDelete(title: string): Generator<any, boolean, any> {
+  let choice: boolean | null = null;
+  while (choice === null) {
+    yield (
+      <div role="alertdialog">
+        <span>Delete {title}?</span>
+        <button onClick={() => (choice = false)}>Cancel</button>
+        <button onClick={() => (choice = true)}>Confirm</button>
+      </div>
+    );
+  }
+  return choice;
+}
+```
+
+### Async Components (`async function*`) & Cancellation
+```tsx
+export async function* UserProfile(props: { id: string }, ctx: Ctx) {
+  yield <p>Loading #{props.id}...</p>;
+  const res = await fetch(`/api/users/${props.id}`, { signal: ctx.signal });
+  const user = await res.json();
+  yield <h2>{user.name}</h2>;
+}
+```
+Note: `async function*` automatically aborts `ctx.signal` and restarts whenever `props` change.
+
+### Unified Web Components (`defineElement`)
+```tsx
+import { defineElement, css } from '@fierst/aster';
+import { Counter } from './Counter.tsx';
+
+defineElement('aster-counter', Counter, {
+  props: { start: 'number', label: 'string' },
+  shadow: true,
+  styles: css`button { border-radius: 999px; }`,
+});
+```
+
+### Streaming SSR & Automatic Lazy Revival
+```ts
+import manifest from './dist/aster-manifest.json' with { type: 'json' };
+import { streamResponse } from '@fierst/aster/ssr';
+import { App } from './app.tsx';
+
+export default {
+  fetch(req: Request) {
+    const url = new URL(req.url);
+    return streamResponse(<App url={url.pathname + url.search} />, {
+      title: 'Aster App',
+      revive: true,
+      manifest,
+    });
+  },
+};
+```
+
+## Documentation
+- [Getting Started](./docs/guides/01-getting-started.md)
+- [Components, Local State, and Signals](./docs/guides/02-components-and-state.md)
+- [Composable UI Flows with yield*](./docs/guides/03-composable-ui-flows.md)
+- [Unified Web Components & Native Styling](./docs/guides/04-web-components-and-styling.md)
+- [Routing, SSR, Lazy Revival, & Error Boundaries](./docs/guides/05-routing-ssr-and-revival.md)
+- [Architecture Decision Records (ADRs)](./docs/README.md)

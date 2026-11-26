@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check-and-unit:
+    name: Check, Node Tests & Pack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: voidzero-dev/setup-vp@v1.22.0
+        with:
+          node-version-file: '.node-version'
+          cache: true
+          run-install: true
+
+      - name: Format, Lint & TypeScript 7 Check
+        run: vp check
+
+      - name: Node Unit & SSR Tests
+        run: vp test --project=node
+
+      - name: Pack Library (ESM + .d.mts)
+        run: vp pack
+
+      - name: Production Playground Build & Island Manifest
+        run: vp build
+
+      - name: Verify Publish Tarball Contents
+        run: |
+          npm pack --dry-run
+          test -f dist/index.mjs
+          test -f dist/index.d.mts
+          test -f dist/astro/index.mjs
+          test -f dist/astro/server.mjs
+          test -f dist/astro/client.mjs
+          test -f dist/aster-manifest.json
+
+      - name: Verify Scaffolder Smoke Test
+        run: |
+          node bin/create.mjs /tmp/aster-smoke-app
+          test -f /tmp/aster-smoke-app/package.json
+          test -f /tmp/aster-smoke-app/vite.config.ts
+          test -f /tmp/aster-smoke-app/tsconfig.json
+          test -f /tmp/aster-smoke-app/src/main.tsx
+
+  browser-tests:
+    name: Real-Chromium Browser Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: voidzero-dev/setup-vp@v1.22.0
+        with:
+          node-version-file: '.node-version'
+          cache: true
+          run-install: true
+
+      - name: Install Playwright Chromium
+        run: vp dlx playwright install --with-deps chromium
+
+      - name: Run Browser Mode Suite
+        run: vp test --project=browser

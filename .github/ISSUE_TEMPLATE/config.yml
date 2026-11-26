@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Aster Documentation & /learn Studio
+    url: https://aster.fierst.dev
+    about: Read guides, ADRs, and interactive lessons before opening an issue.

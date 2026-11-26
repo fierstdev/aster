@@ -1,0 +1,19 @@
+{
+  "name": "__APP_NAME__",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vp dev",
+    "build": "vp build",
+    "preview": "vp preview",
+    "test": "vp test",
+    "check": "vp check"
+  },
+  "dependencies": {
+    "@fierst/aster": "^1.0.0-alpha.1"
+  },
+  "devDependencies": {
+    "vite-plus": "^1.0.0"
+  }
+}
