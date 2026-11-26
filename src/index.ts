@@ -34,3 +34,4 @@ export {
   type ClaimRange,
   type ComponentHandle,
 } from './runtime.ts';
+export { decodeIslandValue as _decodeIslandValue } from './island-values.ts';

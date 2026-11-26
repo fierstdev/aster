@@ -47,7 +47,7 @@ Same-origin `<a>` clicks are intercepted natively with smooth View Transitions, 
 You never wrap components in `island()`, `$`, or `client:visible`. When `@fierst/aster/vite` (`src/compiler.ts`) compiles a `.tsx` module:
 
 - Every **exported stateful generator** (`export function* Counter`) is automatically stamped with `Counter.__asterSrc = '/path/File.js#Counter'`.
-- Plain **stateless `function` components** stay pure HTML and ship **0 bytes** of JS.
+- An exported stateless component can also own an island when the client needs to recreate an event handler or a child composition. Static HTML needs no activation.
 - During SSR (`renderToString(view, { revive: true })` or `htmlResponse()`), Aster automatically wraps the outermost stamped generator in `<aster-island data-aster-src="..." data-aster-props="...">`.
 
 On page load, the delegated listener from `@fierst/aster/revive` runs:
@@ -75,7 +75,9 @@ For a hand-built client or a standard Vite manifest without those entries, pass 
 
 SSR route hooks read the nearest router's URL and parameters. Async components on Node can read context across an `await`. On runtimes without `AsyncLocalStorage`, capture context before the first `await` or use the route props. Components can register resource cleanup using `ctx.onCleanup()` on both server and client. Stream consumers can cancel the reader to signal pending generators through `ctx.signal`.
 
-Island props can carry JSON data, top-level `URLSearchParams`, and primitive child content. For JSX children with components or callbacks, put the island boundary on the parent that constructs them so the client can recreate the tree. Routed islands restore the matched URL and parameters when they activate.
+Island props support plain data, arrays, dates, query parameters, JSX templates, and exported child components. A named callback exported from a compiled client module travels as a module reference. A callback that closes over component locals is recreated by running its owning client component. Include those modules in the client build. Routed islands also restore their matched URL and parameters.
+
+Only pass public data across an island boundary. A closure created exclusively in a server request handler has no browser implementation. SSR reports its prop path, as it does for cyclic input or unsupported class instances.
 
 ### In-Place HMR During `vp dev`
 

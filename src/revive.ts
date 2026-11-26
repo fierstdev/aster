@@ -4,7 +4,19 @@
 
 export function installRevival(runtimeUrl = '@fierst/aster'): () => void {
   const listeners = new AbortController();
-  const revived = new WeakSet<Element>();
+  const revived = new Map<Element, { dispose(): void } | undefined>();
+  const removed = new MutationObserver((records) => {
+    if (
+      !records.some((record) => Array.from(record.removedNodes).some((node) => node.nodeType === 1))
+    )
+      return;
+    for (const [island, handle] of revived) {
+      if (island.isConnected && island.ownerDocument === document) continue;
+      revived.delete(island);
+      handle?.dispose();
+    }
+    if (!revived.size) removed.disconnect();
+  });
   const loading = new WeakMap<Element, Promise<boolean>>();
   const preloaded = new Set<string>();
 
@@ -24,7 +36,7 @@ export function installRevival(runtimeUrl = '@fierst/aster'): () => void {
     const spec = island.getAttribute('data-aster-src')!;
     const [url, exportName = 'default'] = spec.split('#');
     const rawProps = island.getAttribute('data-aster-props');
-    const props = rawProps ? JSON.parse(rawProps) : {};
+    let props = rawProps ? JSON.parse(rawProps) : {};
     for (const key of JSON.parse(island.getAttribute('data-aster-query-props') ?? '[]')) {
       props[key] = new URLSearchParams(props[key]);
     }
@@ -33,11 +45,14 @@ export function installRevival(runtimeUrl = '@fierst/aster'): () => void {
       import(/* @vite-ignore */ runtimeUrl),
       import(/* @vite-ignore */ url),
     ]);
-    if (listeners.signal.aborted) return false;
+    const values = island.getAttribute('data-aster-values');
+    if (values) props = await rt._decodeIslandValue(JSON.parse(values));
+    if (listeners.signal.aborted || !island.isConnected) return false;
     const Component = mod[exportName];
     if (typeof Component !== 'function') throw new TypeError(`Missing component export in ${spec}`);
-    rt.claim(Component, props, island);
-    revived.add(island);
+    const handle = rt.claim(Component, props, island);
+    if (!revived.size) removed.observe(document, { childList: true, subtree: true });
+    revived.set(island, handle);
     return true;
   };
 

@@ -140,6 +140,8 @@ export default {
 Serve the client build and pass its Aster manifest to the SSR renderer. For a custom build supply `revivalUrl` and `runtimeUrl` or map both package names. SSR runs registered cleanup callbacks and preserves each router's own request URL and params. Tagged `html` templates also work in server components.
 
 ## Documentation
+Island props can contain JSX children, client component exports, and named handlers exported from compiled client modules. An exported component can recreate locally captured handlers on activation. Keep request-only capabilities and private data on the server.
+
 - [Getting Started](./docs/guides/01-getting-started.md)
 - [Components, Local State, and Signals](./docs/guides/02-components-and-state.md)
 - [Composable UI Flows with yield*](./docs/guides/03-composable-ui-flows.md)

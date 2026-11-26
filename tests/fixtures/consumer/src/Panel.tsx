@@ -1,6 +1,10 @@
 import type { Ctx, View } from '@fierst/aster';
 import { useParams } from '@fierst/aster/router';
 
+export function activate(event: MouseEvent) {
+  (event.currentTarget as HTMLButtonElement).textContent = 'Exported callback ran';
+}
+
 export function* List() {
   let count = 0;
   for (;;)
@@ -24,6 +28,18 @@ export function* Check() {
         <span>{String(checked)}</span>
       </label>
     );
+}
+
+export function Composition({ label }: { label: string }) {
+  let clicks = 0;
+  const update = (event: MouseEvent) => {
+    (event.currentTarget as HTMLButtonElement).textContent = label + ' ' + ++clicks;
+  };
+  return (
+    <Panel label="Wrapper">
+      <button onClick={update}>Captured callback</button>
+    </Panel>
+  );
 }
 
 export function* Routed(props: { search: URLSearchParams }) {

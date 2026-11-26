@@ -189,37 +189,53 @@ function hydrateTemplateAttrs(
 }
 
 import { routeContext } from './route-context.ts';
+import { IslandValueError, encodeIslandValue } from './island-values.ts';
 
 function serializeProps(
   props: Record<string, unknown> | undefined,
   context: Record<symbol, unknown>,
+  opts: SSROptions,
 ): string {
   const route = context[routeContext.id];
   let attrs = route ? ` data-aster-route="${escapeHtml(JSON.stringify(route))}"` : '';
-  const queries: string[] = [];
-  const clean: Record<string, unknown> = Object.create(null);
-  for (const [k, v] of Object.entries(props ?? {})) {
-    if (v instanceof URLSearchParams) {
-      queries.push(k);
-      clean[k] = v.toString();
-    } else if (
-      typeof v !== 'function' &&
-      v !== undefined &&
-      (k !== 'children' ||
-        v === null ||
-        typeof v !== 'object' ||
-        (Array.isArray(v) && v.every((item) => item == null || typeof item !== 'object')))
-    ) {
-      clean[k] = v;
+  if (props && Object.keys(props).length) {
+    const values = encodeIslandValue(props, (src) =>
+      resolveIslandSrc(src, opts.manifest, opts.base),
+    );
+    attrs += ` data-aster-values="${escapeHtml(JSON.stringify(values))}"`;
+  }
+  return attrs;
+}
+
+// A stateless client export can recreate lexical callbacks in its returned component tree.
+// Plain HTML and descendants whose inputs are transportable keep their usual boundaries.
+function needsClientOwner(view: View): boolean {
+  if (!view || typeof view !== 'object') return false;
+  if (Array.isArray(view)) return view.some(needsClientOwner);
+  if (SLOT in view)
+    return view[SLOT].bindings.some((b, i) => {
+      const value = view.v[i];
+      if (b.kind === 'node') return needsClientOwner(value);
+      if (b.kind === 'spread')
+        return (
+          value &&
+          Object.entries(value).some(([key, v]) => key.startsWith('on') && typeof v === 'function')
+        );
+      return (
+        ((b.name.startsWith('on') || b.name === 'ref') && typeof value === 'function') ||
+        b.name.startsWith('bind:')
+      );
+    });
+  if (COMP in view) {
+    if (!view.src && !(view[COMP] as any).__asterOwnerSrc) return true;
+    try {
+      encodeIslandValue(view.p, (src) => src);
+    } catch (error) {
+      if (error instanceof IslandValueError) return true;
+      throw error;
     }
   }
-  if (queries.length) attrs += ` data-aster-query-props="${escapeHtml(JSON.stringify(queries))}"`;
-  return (
-    attrs +
-    (Object.keys(clean).length > 0
-      ? ` data-aster-props="${escapeHtml(JSON.stringify(clean))}"`
-      : '')
-  );
+  return false;
 }
 
 /**
@@ -340,11 +356,11 @@ export function renderToString(view: View, opts: SSROptions = {}): string {
   if (typeof view !== 'object') return escapeHtml(view);
 
   if (COMP in view) {
-    const isIslandBoundary = Boolean(opts.revive && !opts._inIsland && view.src);
+    let islandSrc = opts.revive && !opts._inIsland ? view.src : undefined;
     const localCtx: Record<symbol, any> = Object.create(opts._ctxMap ?? null);
     const childOpts: SSROptions = {
       ...opts,
-      _inIsland: isIslandBoundary ? true : opts._inIsland,
+      _inIsland: islandSrc ? true : opts._inIsland,
       _ctxMap: localCtx,
     };
 
@@ -367,6 +383,11 @@ export function renderToString(view: View, opts: SSROptions = {}): string {
           if (typeof res.return === 'function') res.return();
         }
       } else {
+        const ownerSrc = (view[COMP] as any).__asterOwnerSrc;
+        if (!childOpts._inIsland && opts.revive && ownerSrc && needsClientOwner(res)) {
+          islandSrc = ownerSrc;
+          childOpts._inIsland = true;
+        }
         innerHtml = renderToString(res, childOpts);
       }
     } catch (err) {
@@ -382,9 +403,9 @@ export function renderToString(view: View, opts: SSROptions = {}): string {
       ctx.dispose();
     }
 
-    if (isIslandBoundary) {
-      const resolvedSrc = resolveIslandSrc(view.src!, opts.manifest, opts.base);
-      return `<aster-island data-aster-src="${escapeHtml(resolvedSrc)}"${serializeProps(view.p, localCtx)}>${innerHtml}</aster-island>`;
+    if (islandSrc) {
+      const resolvedSrc = resolveIslandSrc(islandSrc, opts.manifest, opts.base);
+      return `<aster-island data-aster-src="${escapeHtml(resolvedSrc)}"${serializeProps(view.p, localCtx, opts)}>${innerHtml}</aster-island>`;
     }
     return innerHtml;
   }
@@ -437,11 +458,11 @@ export async function renderToStringAsync(view: View, opts: SSROptions = {}): Pr
   if (typeof view !== 'object') return escapeHtml(view);
 
   if (COMP in view) {
-    const isIslandBoundary = Boolean(opts.revive && !opts._inIsland && view.src);
+    let islandSrc = opts.revive && !opts._inIsland ? view.src : undefined;
     const localCtx: Record<symbol, any> = Object.create(opts._ctxMap ?? null);
     const childOpts: SSROptions = {
       ...opts,
-      _inIsland: isIslandBoundary ? true : opts._inIsland,
+      _inIsland: islandSrc ? true : opts._inIsland,
       _ctxMap: localCtx,
     };
 
@@ -473,6 +494,11 @@ export async function renderToStringAsync(view: View, opts: SSROptions = {}): Pr
           if (typeof res.return === 'function') res.return();
         }
       } else {
+        const ownerSrc = (view[COMP] as any).__asterOwnerSrc;
+        if (!childOpts._inIsland && opts.revive && ownerSrc && needsClientOwner(res)) {
+          islandSrc = ownerSrc;
+          childOpts._inIsland = true;
+        }
         innerHtml = await renderToStringAsync(res, childOpts);
       }
     } catch (err) {
@@ -488,9 +514,9 @@ export async function renderToStringAsync(view: View, opts: SSROptions = {}): Pr
       ctx.dispose();
     }
 
-    if (isIslandBoundary) {
-      const resolvedSrc = resolveIslandSrc(view.src!, opts.manifest, opts.base);
-      return `<aster-island data-aster-src="${escapeHtml(resolvedSrc)}"${serializeProps(view.p, localCtx)}>${innerHtml}</aster-island>`;
+    if (islandSrc) {
+      const resolvedSrc = resolveIslandSrc(islandSrc, opts.manifest, opts.base);
+      return `<aster-island data-aster-src="${escapeHtml(resolvedSrc)}"${serializeProps(view.p, localCtx, opts)}>${innerHtml}</aster-island>`;
     }
     return innerHtml;
   }
@@ -587,11 +613,11 @@ async function renderStreamNode(
   if (typeof view !== 'object') return escapeHtml(view);
 
   if (COMP in view) {
-    const isIslandBoundary = Boolean(opts.revive && !opts._inIsland && view.src);
+    let islandSrc = opts.revive && !opts._inIsland ? view.src : undefined;
     const localCtx: Record<symbol, any> = Object.create(opts._ctxMap ?? null);
     const childOpts: SSROptions = {
       ...opts,
-      _inIsland: isIslandBoundary ? true : opts._inIsland,
+      _inIsland: islandSrc ? true : opts._inIsland,
       _ctxMap: localCtx,
     };
 
@@ -656,6 +682,11 @@ async function renderStreamNode(
           if (typeof res.return === 'function') res.return();
         }
       } else {
+        const ownerSrc = (view[COMP] as any).__asterOwnerSrc;
+        if (!childOpts._inIsland && opts.revive && ownerSrc && needsClientOwner(res)) {
+          islandSrc = ownerSrc;
+          childOpts._inIsland = true;
+        }
         innerHtml = await renderStreamNode(res, childOpts, tracker);
       }
     } catch (err) {
@@ -679,9 +710,9 @@ async function renderStreamNode(
       }
     }
 
-    if (isIslandBoundary) {
-      const resolvedSrc = resolveIslandSrc(view.src!, opts.manifest, opts.base);
-      return `<aster-island data-aster-src="${escapeHtml(resolvedSrc)}"${serializeProps(view.p, localCtx)}>${innerHtml}</aster-island>`;
+    if (islandSrc) {
+      const resolvedSrc = resolveIslandSrc(islandSrc, opts.manifest, opts.base);
+      return `<aster-island data-aster-src="${escapeHtml(resolvedSrc)}"${serializeProps(view.p, localCtx, opts)}>${innerHtml}</aster-island>`;
     }
     return innerHtml;
   }

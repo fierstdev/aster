@@ -34,6 +34,7 @@ export interface CompileResult {
   map: SourceMapV3;
   exportedGenerators: string[];
   exportedStateless: string[];
+  exportedCallbacks: string[];
 }
 
 interface BindingMeta {
@@ -657,24 +658,27 @@ function collectExportedComponents(jsBody: string) {
   }
 
   // 3. Exported PascalCase stateless functions (declarations & arrows) — eligible for HMR, NOT Lazy Revival
-  const fnRe = /\bexport\s+(?:default\s+)?function\s+([A-Z][\w$]*)\s*\(/g;
+  const callbacks: typeof stateless = [];
+  const fnRe = /\bexport\s+(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/g;
   while ((m = fnRe.exec(jsBody)) !== null) {
     const name = m[1];
     if (seen.has(name)) continue;
     seen.add(name);
-    stateless.push({ name, exportKey: /\bexport\s+default\b/.test(m[0]) ? 'default' : name });
+    const exports = /^[A-Z]/.test(name) ? stateless : callbacks;
+    exports.push({ name, exportKey: /\bexport\s+default\b/.test(m[0]) ? 'default' : name });
   }
 
   const arrowRe =
-    /\bexport\s+(?:const|let|var)\s+([A-Z][\w$]*)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/g;
+    /\bexport\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/g;
   while ((m = arrowRe.exec(jsBody)) !== null) {
     const name = m[1];
     if (seen.has(name)) continue;
     seen.add(name);
-    stateless.push({ name, exportKey: name });
+    const exports = /^[A-Z]/.test(name) ? stateless : callbacks;
+    exports.push({ name, exportKey: name });
   }
 
-  return { generators, stateless };
+  return { generators, stateless, callbacks };
 }
 
 /**
@@ -685,13 +689,18 @@ export function compileModule(source: string, options: CompileOptions = {}): Com
   const runtimeImport = options.runtimeImport ?? '@fierst/aster';
   const lowerer = new JSXLowerer(source);
   const body = lowerer.run();
-  const { generators, stateless } = collectExportedComponents(lowerer.declarationSource);
+  const { generators, stateless, callbacks } = collectExportedComponents(lowerer.declarationSource);
 
   const footer: string[] = [];
   if (options.moduleUrl) {
     for (const g of generators) {
       footer.push(
         `${g.name}.__asterSrc = ${JSON.stringify(`${options.moduleUrl}#${g.exportKey}`)};`,
+      );
+    }
+    for (const s of [...stateless, ...callbacks]) {
+      footer.push(
+        `${s.name}.__asterOwnerSrc = ${JSON.stringify(`${options.moduleUrl}#${s.exportKey}`)};`,
       );
     }
     if (options.hmr) {
@@ -736,6 +745,7 @@ export function compileModule(source: string, options: CompileOptions = {}): Com
     code,
     map,
     exportedGenerators: generators.map((g) => g.name),
+    exportedCallbacks: callbacks.map((c) => c.name),
     exportedStateless: stateless.map((s) => s.name),
   };
 }

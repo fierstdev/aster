@@ -1294,6 +1294,22 @@ export function mountComponent(
 
   function applyResult(view: any) {
     if (disposed) return;
+    if (claimRange && view && typeof view === 'object' && view[COMP]) {
+      const target = claimRange;
+      claimRange = undefined;
+      slotState.child = mountComponent(
+        view[COMP],
+        wrapChildProps(view.p, owner),
+        target.parent,
+        target.end,
+        target,
+        view.p?.__asterOnError ?? onError,
+        view.k,
+        localContext,
+      );
+      target.parent.insertBefore(end, target.end);
+      return;
+    }
     if (claimRange && Array.isArray(view)) {
       const target = claimRange;
       claimRange = undefined;
@@ -1485,7 +1501,12 @@ export function mountComponent(
     },
   };
 
-  stepSync();
+  try {
+    stepSync();
+  } catch (error) {
+    handle.dispose();
+    throw error;
+  }
   return handle;
 }
 

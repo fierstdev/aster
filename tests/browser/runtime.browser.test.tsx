@@ -81,7 +81,9 @@ describe('Aster Real-Browser DOM Runtime', () => {
   });
   it('retries failed revival and replays pending clicks in order after one claim', async () => {
     const moduleUrl = (source: string) => 'data:text/javascript,' + encodeURIComponent(source);
-    const runtime = moduleUrl('export function claim(component, props, el) { component(el); }');
+    const runtime = moduleUrl(
+      'export function claim(component, props, el) { component(el); return {dispose(){el.dataset.disposed="yes"}}; }',
+    );
     const component = moduleUrl(`
       export default function(el) {
         el.dataset.claims = String(Number(el.dataset.claims || 0) + 1);
@@ -101,6 +103,8 @@ describe('Aster Real-Browser DOM Runtime', () => {
         root.dispatchEvent(new MouseEvent('click', { bubbles: true, detail }));
       await vi.waitFor(() => expect(root.dataset.order).toBe('12'));
       expect(root.dataset.claims).toBe('1');
+      root.remove();
+      await vi.waitFor(() => expect(root.dataset.disposed).toBe('yes'));
     } finally {
       uninstall();
     }

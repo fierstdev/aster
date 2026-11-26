@@ -6,6 +6,8 @@ All notable changes to **Aster** are documented in this file. The format follows
 
 ## [1.0.0] - Unreleased
 
+- Preserve JSX children, nested client components, and exported callbacks during island revival. Recreate captured callbacks in the owning client component and dispose mounted islands when they leave the document.
+
 - Isolate SSR route hooks per tree and run component cleanup on completion, failure, and canceled streams.
 - Preserve nested slot boundaries and literal text across sync, async, and streaming SSR. Tagged HTML templates now render on servers without a DOM.
 - Emit browser-resolvable revival entries in the production manifest. Support explicit loader URLs, coalesce concurrent activations, and retry after a failed claim.

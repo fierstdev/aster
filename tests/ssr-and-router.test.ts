@@ -4,6 +4,35 @@ import { renderToString, renderDocument, htmlResponse, resolveIslandSrc } from '
 import { matchRoute, Router, useLocation, useParams, useSearchParams } from '../src/router.ts';
 import { createContext, provide, useContext, Provider } from '../src/index.ts';
 import { renderToStringAsync, renderToStream, streamResponse } from '../src/ssr.ts';
+import { encodeIslandValue, decodeIslandValue } from '../src/island-values.ts';
+
+it('round-trips ordinary data, reserved-looking keys, dates and nested query parameters', async () => {
+  const data = {
+    values: [undefined, new Date('2026-01-01'), new URLSearchParams('x=1&x=2')],
+    record: JSON.parse('{"__proto__":"literal","type":"callback"}'),
+    tag: ['component', 'ordinary text'],
+  };
+  const restored = await decodeIslandValue(
+    JSON.parse(JSON.stringify(encodeIslandValue(data, (src) => src))),
+  );
+  expect(restored).toEqual(data);
+  expect(Object.getPrototypeOf(restored.record)).toBe(Object.prototype);
+});
+
+it('reports unsupported island values in sync, async and streamed SSR', async () => {
+  function* Panel() {
+    yield 'panel';
+  }
+  Panel.__asterSrc = '/panel.js#Panel';
+  const cycle: Record<string, unknown> = {};
+  cycle.self = cycle;
+  for (const input of [cycle, () => 1, new Set()]) {
+    const view = _comp(Panel, { payload: input });
+    expect(() => renderDocument(view)).toThrow(/props\.payload/);
+    await expect(renderToStringAsync(view, { revive: true })).rejects.toThrow(/props\.payload/);
+    await expect(streamResponse(view).text()).rejects.toThrow(/props\.payload/);
+  }
+});
 
 describe('SSR, Spread Attrs, & Production Manifest Lazy Revival', () => {
   it('advances generator once, escapes HTML, emits <aster-island>, and runs finally cleanup', () => {

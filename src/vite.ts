@@ -83,7 +83,7 @@ export function aster(options: AsterPluginOptions = {}) {
     },
     load(id: string) {
       if (id === virtualPrefix + 'runtime') {
-        return `export { claim } from ${JSON.stringify(options.runtimeImport ?? '@fierst/aster')};`;
+        return `export { claim, _decodeIslandValue } from ${JSON.stringify(options.runtimeImport ?? '@fierst/aster')};`;
       }
       if (id === virtualPrefix + 'revive')
         return "export { installRevival } from '@fierst/aster/revive';";
@@ -120,7 +120,13 @@ export function aster(options: AsterPluginOptions = {}) {
 
       // On client production builds, register island modules as preserved chunks so
       // Rolldown emits real hashed chunks with exports intact for Lazy Revival import()
-      if (isBuild && !isSsrBuild && result.exportedGenerators.length > 0) {
+      if (
+        isBuild &&
+        !isSsrBuild &&
+        (result.exportedGenerators.length ||
+          result.exportedStateless.length ||
+          result.exportedCallbacks.length)
+      ) {
         islandModules.set(cleanId, relPath);
         if (typeof this?.emitFile === 'function') {
           this.emitFile({

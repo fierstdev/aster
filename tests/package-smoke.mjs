@@ -172,6 +172,16 @@ try {
           assert(await checkbox.isChecked());
           await page.getByRole('button', { name: 'one info 0' }).click();
           await page.getByRole('button', { name: 'one info 1' }).waitFor();
+          await page.getByRole('button', { name: 'Inner 0' }).click();
+          await page.getByRole('button', { name: 'Inner 1' }).waitFor();
+          await page.getByRole('button', { name: 'Outer 0' }).click();
+          await page.getByRole('button', { name: 'Inner 1' }).waitFor();
+          await page.getByText('Nested markup').waitFor();
+          await page.getByRole('button', { name: 'Exported callback', exact: true }).click();
+          await page.getByRole('button', { name: 'Exported callback ran' }).waitFor();
+          await page.getByRole('button', { name: 'Captured callback' }).click();
+          await page.getByRole('button', { name: 'Captured 1' }).click();
+          await page.getByRole('button', { name: 'Captured 2' }).waitFor();
         },
         html,
       );
