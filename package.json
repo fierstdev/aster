@@ -1,6 +1,6 @@
 {
   "name": "@fierst/aster",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Browser-native, zero-VDOM web framework by Fierst LLC powered by Generator Components (function*), Slot-Compiled Templates, Unified Web Components, and Automatic Lazy Revival — built on Vite+.",
   "keywords": [
     "aster",

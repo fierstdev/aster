@@ -1,48 +1,130 @@
-* {
-  box-sizing: border-box;
+.starter {
+  --ink: #202721;
+  --muted: #536057;
+  --line: #cdd7cd;
+  --accent: #255b43;
+  --panel: #edf3ec;
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 2rem clamp(1rem, 5vw, 4rem) 4rem;
+  font:
+    1rem/1.55 system-ui,
+    sans-serif;
+  color: var(--ink);
 }
-body {
-  margin: 0;
-  font-family: system-ui, -apple-system, sans-serif;
-  background: #f8fafc;
-  color: #0f172a;
-  display: grid;
-  place-items: center;
-  min-height: 100vh;
-}
-main {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  padding: 2rem;
-  width: min(440px, 92vw);
-  display: grid;
+.starter .masthead,
+.starter .demo,
+.starter .counter-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 1rem;
 }
-h1 {
-  margin: 0;
-  font-size: 1.4rem;
+.starter .masthead {
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
 }
-p {
-  margin: 0;
-  color: #64748b;
+.starter .masthead strong {
+  font-size: 1.5rem;
+  letter-spacing: -0.06em;
 }
-.row {
-  display: flex;
+.starter code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+.starter .welcome {
+  padding: clamp(3rem, 8vw, 6rem) 0;
+}
+.starter h1 {
+  margin: 0;
+  font:
+    500 clamp(2.8rem, 8vw, 6rem)/1.05 Georgia,
+    serif;
+  letter-spacing: -0.055em;
+}
+.starter p {
+  max-width: 48ch;
+  margin: 0.75rem 0 0;
+  color: var(--muted);
+}
+.starter .demo {
+  padding: clamp(1.25rem, 4vw, 2rem);
+  background: var(--panel);
+  border-radius: 1rem;
+}
+.starter h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+.starter .counter-actions {
+  justify-content: flex-start;
   gap: 0.5rem;
-  align-items: center;
-  flex-wrap: wrap;
 }
-button {
+.starter .counter-actions button {
+  min-height: 44px;
   padding: 0.5rem 1rem;
-  border-radius: 999px;
-  border: 1px solid #cbd5e1;
-  background: #fff;
-  cursor: pointer;
   font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  cursor: pointer;
 }
-button.primary {
-  background: #0071e3;
-  color: #fff;
-  border-color: #0071e3;
+.starter button.counter-increment {
+  color: white;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.starter button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.starter nav {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: 1rem;
+  margin-top: 2rem;
+}
+.starter nav a {
+  padding: 1rem 0;
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  text-decoration: none;
+}
+.starter nav a:hover strong {
+  text-decoration: underline;
+}
+.starter nav span {
+  color: var(--accent);
+}
+.starter small {
+  display: block;
+  color: var(--muted);
+}
+.starter :focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+  }
+  .starter {
+    --ink: #eff4ed;
+    --muted: #bbc7bc;
+    --line: #4f5d52;
+    --panel: #26342b;
+    --accent: #a8d9bc;
+  }
+  .starter .counter-actions button {
+    color: var(--ink);
+    background: #26342b;
+  }
+  .starter button.counter-increment {
+    color: #16291e;
+    background: var(--accent);
+  }
 }

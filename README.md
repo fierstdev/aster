@@ -23,6 +23,8 @@ vp check     # Format + lint + TypeScript 7 check
 vp pack      # Build publishable ESM + .d.ts into dist/
 ```
 
+Generated apps include an optional AsterUI command. Run `npm run ui -- add button` from the app, install the dependencies listed by the CLI, and import `Button` from `./ui/button` in `src/main.tsx`. The starter loads `src/ui/theme.css` as soon as it exists. Plain Aster apps can use the starter without installing any UI components.
+
 ## Layout
 
 - `src/` — `index.ts`, `runtime.ts`, `jsx-runtime.ts`, `router.ts`, `ssr.ts`, `revive.ts`, `compiler.ts`, `vite.ts`, `astro/` (`index.ts`, `server.ts`, `client.ts`, `slots.ts`)

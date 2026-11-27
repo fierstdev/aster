@@ -8,10 +8,11 @@
     "build": "vp build",
     "preview": "vp preview",
     "test": "vp test",
-    "check": "vp check"
+    "check": "vp check",
+    "ui": "vp dlx @fierst/ui@1"
   },
   "dependencies": {
-    "@fierst/aster": "^1.2.0"
+    "@fierst/aster": "^1.2.1"
   },
   "devDependencies": {
     "vite-plus": "^1.0.0"
