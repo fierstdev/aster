@@ -4,7 +4,7 @@ All notable changes to **Aster** are documented in this file. The format follows
 
 ---
 
-## Unreleased
+## [1.1.0] - 2026-11-27
 
 - Preserve local bindings and public export aliases during slot compilation and revival. Match form attribute precedence across client mounts and SSR, preserve native submission through lazy activation, and wake keyboard-driven islands on the first keydown.
 - Isolate cancellation and cleanup per client generator execution. Handle malformed route parameters and literal dots in fallback routes. Support a per-response CSP nonce for framework-generated document and stream scripts.
