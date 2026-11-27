@@ -34,7 +34,7 @@ export function installRevival(runtimeUrl = '@fierst/aster'): () => void {
 
   const claimIsland = async (island: Element) => {
     const spec = island.getAttribute('data-aster-src')!;
-    const [url, exportName = 'default'] = spec.split('#');
+    const [url, exportName = 'default'] = spec.split(/#(.*)/s);
     const rawProps = island.getAttribute('data-aster-props');
     let props = rawProps ? JSON.parse(rawProps) : {};
     for (const key of JSON.parse(island.getAttribute('data-aster-query-props') ?? '[]')) {
@@ -77,6 +77,12 @@ export function installRevival(runtimeUrl = '@fierst/aster'): () => void {
       node instanceof Element ? node : node instanceof Node ? node.parentElement : null;
     const island = target?.closest?.('[data-aster-src]');
     if (!island || revived.has(island)) return;
+    const canceled = e.defaultPrevented;
+    const button = target?.closest('button,input');
+    const activatesForm =
+      (button instanceof HTMLButtonElement || button instanceof HTMLInputElement) &&
+      button.form &&
+      (button.type === 'submit' || button.type === 'image');
 
     // A cached import can finish between capture and target listeners in WebKit.
     // Only the replay should reach the newly attached component handlers.
@@ -85,13 +91,33 @@ export function installRevival(runtimeUrl = '@fierst/aster'): () => void {
     if (
       e.type === 'submit' ||
       (e.type === 'click' &&
-        target instanceof HTMLInputElement &&
-        (target.type === 'checkbox' || target.type === 'radio'))
+        (activatesForm ||
+          (target instanceof HTMLInputElement &&
+            (target.type === 'checkbox' || target.type === 'radio'))))
     )
       e.preventDefault();
     if (await reviveIsland(island)) {
       if (e.eventPhase !== Event.NONE) await new Promise<void>((resolve) => setTimeout(resolve, 0));
-      target?.dispatchEvent(new (e.constructor as any)(e.type, e));
+      if (!target || !island.isConnected || !island.contains(target)) return;
+      if (
+        e instanceof SubmitEvent &&
+        e.isTrusted &&
+        !canceled &&
+        target instanceof HTMLFormElement
+      ) {
+        const submitter = e.submitter;
+        if (
+          submitter &&
+          (!(submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement) ||
+            submitter.form !== target)
+        )
+          return;
+        HTMLFormElement.prototype.requestSubmit.call(target, submitter ?? undefined);
+      } else {
+        const replay = new (e.constructor as any)(e.type, e);
+        if (canceled) replay.preventDefault();
+        target.dispatchEvent(replay);
+      }
     }
   };
 
@@ -101,7 +127,7 @@ export function installRevival(runtimeUrl = '@fierst/aster'): () => void {
       signal: listeners.signal,
     });
   }
-  for (const ev of ['click', 'input', 'change', 'submit']) {
+  for (const ev of ['keydown', 'click', 'input', 'change', 'submit']) {
     document.addEventListener(ev, wake, { capture: true, signal: listeners.signal });
   }
 

@@ -137,6 +137,28 @@ function buildLineSourceMap(
 }
 
 export class SlotEmitter {
+  private reserved: Set<string>;
+  private names = new Map<string, string>();
+  constructor(source: string) {
+    // Reserve nested bindings and references as well as top-level declarations.
+    const decoded = source.replace(
+      /\\u(?:\{([0-9a-fA-F]+)\}|([0-9a-fA-F]{4}))/g,
+      (raw, braced, short) => {
+        const point = parseInt(braced ?? short, 16);
+        return point <= 0x10ffff ? String.fromCodePoint(point) : raw;
+      },
+    );
+    this.reserved = new Set(decoded.match(/[\w$]+/g));
+  }
+  local(base: string): string {
+    let name = this.names.get(base);
+    if (name) return name;
+    name = base;
+    while (this.reserved.has(name)) name += '$';
+    this.names.set(base, name);
+    this.reserved.add(name);
+    return name;
+  }
   hoisted: HoistedTpl[] = [];
   usedHelpers = new Set<string>();
   cleanJsxText(raw: string): string {
@@ -192,8 +214,8 @@ export class SlotEmitter {
       }
       const propsObj = propParts.length ? `{ ${propParts.join(', ')} }` : '{}';
       return keyExpr
-        ? `_comp(${el.reference ?? el.tag}, ${propsObj}, ${keyExpr})`
-        : `_comp(${el.reference ?? el.tag}, ${propsObj})`;
+        ? `${this.local('_comp')}(${el.reference ?? el.tag}, ${propsObj}, ${keyExpr})`
+        : `${this.local('_comp')}(${el.reference ?? el.tag}, ${propsObj})`;
     }
 
     this.usedHelpers.add('_tpl');
@@ -266,10 +288,10 @@ export class SlotEmitter {
     };
 
     const html = buildHtml(el, [0]);
-    const id = `_t${this.hoisted.length + 1}`;
+    const id = this.local(`_t${this.hoisted.length + 1}`);
     this.hoisted.push({ id, html, bindings });
     const vals = `[${values.join(', ')}]`;
-    return keyExpr ? `_slot(${id}, ${vals}, ${keyExpr})` : `_slot(${id}, ${vals})`;
+    return `${this.local('_slot')}(${id}, ${vals}${keyExpr ? ', ' + keyExpr : ''})`;
   }
 
   emitSingleChild(ch: JSXChild): string {
@@ -282,7 +304,8 @@ export class SlotEmitter {
     if (name === 'bind:value' || name === 'bind:checked' || name === 'bind:open') {
       const trimmed = expr.trim();
       if (bindable ?? /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])*$/.test(trimmed)) {
-        return `[() => ${trimmed}, (_v) => (${trimmed} = _v)]`;
+        const param = this.local('_v');
+        return `[() => ${trimmed}, (${param}) => (${trimmed} = ${param})]`;
       }
     }
     return expr;
@@ -299,7 +322,7 @@ class JSXLowerer extends SlotEmitter {
   private srcLine = 0;
 
   constructor(src: string) {
-    super();
+    super(src);
     this.src = src;
   }
 
@@ -740,7 +763,7 @@ export function emitModule(
       if (hasComponents && !isEntry) {
         lowerer.usedHelpers.add('__asterHmrAccept');
         footer.push(
-          `if (import.meta.hot) { import.meta.hot.accept((_m) => { if (_m) __asterHmrAccept(${JSON.stringify(options.moduleUrl)}, _m); }); }`,
+          `if (import.meta.hot) { import.meta.hot.accept((_m) => { if (_m) ${lowerer.local('__asterHmrAccept')}(${JSON.stringify(options.moduleUrl)}, _m); }); }`,
         );
       }
     }
@@ -748,10 +771,15 @@ export function emitModule(
 
   const header: string[] = [];
   if (lowerer.usedHelpers.size > 0) {
-    header.push(`import { ${[...lowerer.usedHelpers].join(', ')} } from '${runtimeImport}';`);
+    const imports = [...lowerer.usedHelpers].map((name) =>
+      name === lowerer.local(name) ? name : name + ' as ' + lowerer.local(name),
+    );
+    header.push(`import { ${imports.join(', ')} } from '${runtimeImport}';`);
   }
   for (const h of lowerer.hoisted) {
-    header.push(`const ${h.id} = _tpl(${JSON.stringify(h.html)}, ${JSON.stringify(h.bindings)});`);
+    header.push(
+      `const ${h.id} = ${lowerer.local('_tpl')}(${JSON.stringify(h.html)}, ${JSON.stringify(h.bindings)});`,
+    );
   }
 
   const headerStr = header.length > 0 ? header.join('\n') + '\n\n' : '';

@@ -38,6 +38,77 @@ afterEach(() => {
 });
 
 describe('Aster Real-Browser DOM Runtime', () => {
+  it('restores earlier properties when a later spread drops an attribute', async () => {
+    const overrides = signal<Record<string, string | undefined>>({ value: 'last' });
+    function* Field() {
+      for (;;) yield <input value="first" {...overrides()} />;
+    }
+    dispose = render(<Field />, root);
+    const field = root.querySelector('input')!;
+    expect(field.value).toBe('last');
+    overrides.set({});
+    await flush();
+    expect(field.value).toBe('first');
+    overrides.set({ value: undefined });
+    await flush();
+    expect(field.hasAttribute('value')).toBe(false);
+  });
+  it('keeps aborted contexts isolated and reports rejected async cleanup on restart and unmount', async () => {
+    const releases: (() => void)[] = [];
+    const signals: AbortSignal[] = [];
+    const late: string[] = [];
+    const report = vi.spyOn(console, 'error').mockImplementation(() => {});
+    async function* Worker({ id }: { id: string }, ctx: Ctx) {
+      const initial = ctx.signal;
+      signals.push(initial);
+      try {
+        yield <p>{id}</p>;
+        await new Promise<void>((resolve) => releases.push(resolve));
+        if (ctx.signal === initial && ctx.signal.aborted) late.push(id);
+        ctx.onCleanup(() => late.push('cleanup ' + id));
+        yield <p>obsolete</p>;
+      } finally {
+        throw new Error('final ' + id);
+      }
+    }
+    function* Host() {
+      let id = 'one';
+      for (;;)
+        yield (
+          <div>
+            <button onClick={() => (id = 'two')}>Switch</button>
+            <Worker id={id} />
+          </div>
+        );
+    }
+    try {
+      dispose = render(<Host />, root);
+      await vi.waitFor(() => expect(releases.length).toBe(1));
+      root.querySelector('button')!.click();
+      await vi.waitFor(() => expect(releases.length).toBe(2));
+      releases[0]();
+      await vi.waitFor(() =>
+        expect(report).toHaveBeenCalledWith(
+          '[Aster component cleanup error]',
+          expect.objectContaining({ message: 'final one' }),
+        ),
+      );
+      expect(root.querySelector('p')?.textContent).toBe('two');
+      expect(signals[1].aborted).toBe(false);
+      dispose();
+      dispose = null;
+      releases[1]();
+      await vi.waitFor(() =>
+        expect(report).toHaveBeenCalledWith(
+          '[Aster component cleanup error]',
+          expect.objectContaining({ message: 'final two' }),
+        ),
+      );
+      expect(late).toEqual(['one', 'cleanup one', 'two', 'cleanup two']);
+    } finally {
+      report.mockRestore();
+    }
+  });
   it('claims keyed list entries inside a slot and preserves their buttons across reorder', async () => {
     function* Rows() {
       let items = ['first', 'second'];

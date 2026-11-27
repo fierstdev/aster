@@ -1,0 +1,2 @@
+# The scaffolder copies these files verbatim into the packed starter.
+template/** text=auto eol=lf

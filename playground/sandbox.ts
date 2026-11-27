@@ -50,14 +50,24 @@ export function compileSandboxCode(source: string): SandboxCompileOutput {
 
   // Strip ESM `import ... from '@fierst/aster'` lines (injected via RUNTIME_SCOPE)
   // and `export` keywords so the snippet runs cleanly inside `new Function`.
-  const executableBody =
+  const aliases: string[] = [];
+  const body =
     compiled
-      .replace(/^\s*import\s+[\s\S]*?from\s+['"]@fierst\/aster['"];?\s*$/gm, '')
+      .replace(
+        /^\s*import\s*\{([^}]+)\}\s*from\s+['"]@fierst\/aster['"];?\s*$/gm,
+        (_, names: string) => {
+          for (const spec of names.split(',')) {
+            const [name, local] = spec.trim().split(/\s+as\s+/);
+            if (local) aliases.push(`const ${local} = ${name};`);
+          }
+          return '';
+        },
+      )
       .replace(/\bexport\s+default\s+/g, '')
       .replace(/\bexport\s+(?=(?:async\s+)?function|const|let|var)/g, '') +
     '\nreturn typeof App === "function" ? App : null;\n';
 
-  return { compiled, executableBody };
+  return { compiled, executableBody: aliases.join('\n') + '\n{\n' + body + '}' };
 }
 
 export interface SandboxMountResult {

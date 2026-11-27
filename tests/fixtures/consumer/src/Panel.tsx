@@ -1,11 +1,46 @@
-import type { Ctx, View } from '@fierst/aster';
+import { render, type Ctx, type View } from '@fierst/aster';
 import { useParams } from '@fierst/aster/router';
+
+export function* NativeForm() {
+  const defaults: Record<string, string> = { value: 'spread' };
+  let _v = 'initial';
+  let submissions = 0;
+  for (;;)
+    yield (
+      <form
+        action="/submitted"
+        target="result"
+        onKeyDown={(e: KeyboardEvent) => {
+          if (e.key === 'Escape') (e.currentTarget as HTMLElement).dataset.escape = 'yes';
+        }}
+        onSubmit={(event: SubmitEvent) => {
+          const form = event.currentTarget as HTMLFormElement;
+          form.dataset.submissions = String(++submissions);
+          form.dataset.submitter = event.submitter?.id;
+          form.dataset.draft = _v;
+          if (_v === 'cancel') event.preventDefault();
+        }}
+      >
+        <input name="draft" bind:value={_v} />
+        <input name="first" type="hidden" value="literal" {...defaults} />
+        <input name="last" type="hidden" {...defaults} value="literal" />
+        <button id="save" name="intent" value="save">
+          Save
+        </button>
+      </form>
+    );
+}
+
+export function mountNativeForm() {
+  return render(<NativeForm />, document.getElementById('app')!);
+}
 
 export const activate = (event: MouseEvent = new MouseEvent('click')) => {
   (event.currentTarget as HTMLButtonElement).textContent = 'Exported callback ran';
 };
 
-export function* List() {
+export { ListComponent as List };
+function* ListComponent() {
   let count = 0;
   for (;;)
     yield (

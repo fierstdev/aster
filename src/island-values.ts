@@ -120,7 +120,7 @@ export async function decodeIslandValue(value: Value): Promise<any> {
 }
 
 async function loadExport(spec: string) {
-  const [url, name = 'default'] = spec.split('#');
+  const [url, name = 'default'] = spec.split(/#(.*)/s);
   const module = await import(/* @vite-ignore */ url);
   if (typeof module[name] !== 'function') throw new TypeError(`Missing client export in ${spec}`);
   return module[name];

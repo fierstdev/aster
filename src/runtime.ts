@@ -646,17 +646,23 @@ function setAttr(
     return;
   }
 
+  const preserveInput =
+    claiming && attr === 'value' && 'defaultValue' in el && el.value !== el.defaultValue;
   if (next === false || next == null) {
     el.removeAttribute(attr);
     if (attr in el && typeof el[attr] === 'boolean') el[attr] = false;
+    if (!preserveInput && attr === 'value' && 'value' in el && el.value !== '') el.value = '';
   } else if (next === true) {
     el.setAttribute(attr, '');
     if (attr in el && typeof el[attr] === 'boolean') el[attr] = true;
   } else {
     el.setAttribute(attr, String(next));
-    if (attr === 'value' && 'value' in el && el.value !== String(next)) el.value = String(next);
+    if (!preserveInput && attr === 'value' && 'value' in el && el.value !== String(next))
+      el.value = String(next);
   }
 }
+
+const MISSING_ATTR = Symbol('missing attribute');
 
 function setSpread(
   el: any,
@@ -684,7 +690,15 @@ function setSpread(
   if (nextObj) {
     for (const k of Object.keys(nextObj)) {
       const ks = state.keys[k] ?? (state.keys[k] = {});
-      setAttr(el, k, nextObj[k], prevObj?.[k], owner, ks, claiming);
+      setAttr(
+        el,
+        k,
+        nextObj[k],
+        prevObj && Object.hasOwn(prevObj, k) ? prevObj[k] : MISSING_ATTR,
+        owner,
+        ks,
+        claiming,
+      );
     }
   }
 }
@@ -756,6 +770,44 @@ function mountSlot(
   const states: any[] = compiled.bindings.map(() => ({}));
   const prevValues: any[] = new Array(values.length).fill(Symbol('init'));
 
+  // Resolve spreads and their sibling attributes as one ordered property set.
+  // Diffing separate spreads loses earlier values when a later spread drops a key.
+  let spreadGroups:
+    | Map<Node, { first: number; update(next: readonly any[], claiming: boolean): void }>
+    | undefined;
+  for (const [i, binding] of compiled.bindings.entries()) {
+    if (binding.kind !== 'spread' || spreadGroups?.has(nodes[i])) continue;
+    const template = pathToNode(getTemplateEl(compiled).content, binding.path) as Element;
+    const attrs = Array.from(template.attributes, (attr) => ({
+      name: attr.name,
+      value: attr.value,
+      index: /^data-aster-a\d+$/.test(attr.name)
+        ? Number(attr.name.slice('data-aster-a'.length))
+        : -1,
+    }));
+    if (!attrs.some((attr) => attr.index === i)) continue;
+    let previous: Record<string, unknown> | undefined;
+    spreadGroups ??= new Map();
+    spreadGroups.set(nodes[i], {
+      first: attrs.find((attr) => attr.index >= 0)!.index,
+      update(values, claiming) {
+        const props: Record<string, unknown> = Object.create(null);
+        const assign = (key: string, val: unknown) => {
+          props[key === 'className' ? 'class' : key] = val;
+        };
+        for (const { name, value, index } of attrs) {
+          const part = compiled.bindings[index];
+          if (index === -1) assign(name, value);
+          else if (part?.kind === 'spread' && values[index] && typeof values[index] === 'object') {
+            for (const [k, v] of Object.entries(values[index])) assign(k, v);
+          } else if (part?.kind === 'attr') assign(part.name, values[index]);
+        }
+        setSpread(nodes[i], props, previous, owner, states[i], claiming);
+        previous = props;
+      },
+    });
+  }
+
   function patch(nextValues: readonly any[], isClaim = false) {
     for (let i = 0; i < compiled.bindings.length; i++) {
       const b = compiled.bindings[i];
@@ -763,6 +815,11 @@ function mountSlot(
       const prev = prevValues[i];
       prevValues[i] = next;
 
+      const group = spreadGroups?.get(nodes[i]);
+      if (group) {
+        if (i === group.first) group.update(nextValues, isClaim);
+        continue;
+      }
       if (b.kind === 'attr') {
         setAttr(nodes[i], b.name, next, prev, owner, states[i], isClaim);
       } else if (b.kind === 'spread') {
@@ -1270,20 +1327,41 @@ export function mountComponent(
     observer.deps.clear();
   }
 
-  const ctx: Ctx = {
-    get signal() {
-      return ac.signal;
-    },
-    refresh: () => schedule(),
-    onCleanup: (cb) => cleanups.add(cb),
-    [Symbol.iterator]() {
-      return {
-        next() {
-          return disposed ? { done: true, value: undefined } : { done: false, value: currentProps };
-        },
-      };
-    },
-  };
+  function reportCleanupError(error: unknown) {
+    console.error('[Aster component cleanup error]', error);
+  }
+  function runCleanup(cb: () => unknown) {
+    try {
+      const result = cb();
+      if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+        void Promise.resolve(result).catch(reportCleanupError);
+      }
+    } catch (error) {
+      reportCleanupError(error);
+    }
+  }
+  function executionContext(signal: AbortSignal, callbacks: Set<() => void>): Ctx {
+    return {
+      signal,
+      refresh: () => {
+        if (!signal.aborted) schedule();
+      },
+      onCleanup: (cb) => {
+        if (signal.aborted) runCleanup(cb);
+        else callbacks.add(cb);
+      },
+      [Symbol.iterator]() {
+        return {
+          next() {
+            return disposed || signal.aborted
+              ? { done: true, value: undefined }
+              : { done: false, value: currentProps };
+          },
+        };
+      },
+    };
+  }
+  let ctx = executionContext(ac.signal, cleanups);
 
   const owner: Owner = {
     schedule,
@@ -1414,7 +1492,11 @@ export function mountComponent(
         if (out.done) break;
       }
     } catch (err: any) {
-      if (disposed || runId !== asyncRunId || err?.name === 'AbortError') return;
+      if (err?.name === 'AbortError') return;
+      if (disposed || runId !== asyncRunId) {
+        reportCleanupError(err);
+        return;
+      }
       if (onError) {
         onError(err);
       } else {
@@ -1439,19 +1521,14 @@ export function mountComponent(
     clearDeps();
     ac.abort();
     if (gen && typeof gen.return === 'function') {
-      try {
-        gen.return();
-      } catch (_) {}
+      runCleanup(() => gen.return());
     }
     gen = null;
     isAsync = false;
-    for (const cb of cleanups) {
-      try {
-        cb();
-      } catch (_) {}
-    }
+    for (const cb of cleanups) runCleanup(cb);
     cleanups = new Set();
     ac = new AbortController();
+    ctx = executionContext(ac.signal, cleanups);
   }
 
   let unregisterHmr: (() => void) | null = null;

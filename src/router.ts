@@ -63,7 +63,16 @@ export function navigate(to: string, opts: { replace?: boolean; transition?: boo
   commitUrl(to, opts.transition ?? true);
 }
 
-/** Match a pathname + search against RouteDefs using native URLPattern (with fallback). */
+function decodeParam(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch (error) {
+    if (error instanceof URIError) return value;
+    throw error;
+  }
+}
+
+/** Match a pathname + search using native URLPattern or the literal/segment/wildcard fallback. */
 export function matchRoute(routes: readonly RouteDef[], urlStr: string): RouteMatch | null {
   const parsed = new URL(urlStr, 'http://aster.local');
   const pathname = parsed.pathname;
@@ -77,26 +86,32 @@ export function matchRoute(routes: readonly RouteDef[], urlStr: string): RouteMa
         for (const [k, v] of Object.entries(
           res.pathname.groups as Record<string, string | undefined>,
         )) {
-          if (v !== undefined) params[k] = decodeURIComponent(v);
+          if (v !== undefined) params[k] = decodeParam(v);
         }
         return { route, params, search: parsed.searchParams, pathname };
       }
     } else {
       const keys: string[] = [];
+      let wildcard = 0;
       const reStr =
         '^' +
-        route.path
-          .replace(/\/:([^/]+)/g, (_m, k) => {
-            keys.push(k);
-            return '/([^/]+)';
-          })
-          .replace(/\*/g, '.*') +
+        route.path.replace(/:([A-Za-z_]\w*)|\*|[\\^$.*+?()[\]{}|]/g, (token, param) => {
+          if (param) {
+            keys.push(param);
+            return '([^/]+)';
+          }
+          if (token === '*') {
+            keys.push(String(wildcard++));
+            return '(.*)';
+          }
+          return '\\' + token;
+        }) +
         '$';
       const m = pathname.match(new RegExp(reStr));
       if (m) {
         const params: Record<string, string> = {};
         keys.forEach((k, i) => {
-          params[k] = decodeURIComponent(m[i + 1]);
+          params[k] = decodeParam(m[i + 1]);
         });
         return { route, params, search: parsed.searchParams, pathname };
       }

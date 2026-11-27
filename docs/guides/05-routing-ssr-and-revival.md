@@ -40,6 +40,8 @@ export function App(props: { url?: string }) {
 
 Same-origin `<a>` clicks are intercepted natively with smooth View Transitions, and work even with JavaScript disabled.
 
+Literal paths, named segments such as `/users/:id`, and wildcards work with the fallback matcher. Route parameters are decoded when possible. A malformed percent escape keeps the captured text available to the route.
+
 ---
 
 ## 2. Automatic Event-Delegated Lazy Revival
@@ -53,7 +55,7 @@ You never wrap components in `island()`, `$`, or `client:visible`. When `@fierst
 On page load, the delegated listener from `@fierst/aster/revive` runs:
 
 1. Hovering (`pointerenter`) or focusing (`focusin`) inside an island preloads its ES module via `<link rel="modulepreload">`.
-2. On first `click`, `input`, `change`, or `submit`, only that island imports its module, calls `claim()` to attach directly onto the existing SSR DOM in-place, preserves any text already typed into inputs, and replays the event.
+2. A first `keydown`, `click`, `input`, `change`, or `submit` wakes the island. Aster claims the existing DOM and preserves typed input. A deferred native form submission runs browser validation and gives the component's submit handler the original submit button and the opportunity to cancel.
 3. Need a component (like a live WebSocket ticker) to wake up before any user interaction? Add `data-aster-eager` to its container element.
 
 ---
@@ -74,6 +76,8 @@ Serve the client build at its configured base URL. The Aster manifest includes t
 For a hand-built client or a standard Vite manifest without those entries, pass browser module URLs in `revivalUrl` and `runtimeUrl`, or provide an import map for `@fierst/aster/revive` and `@fierst/aster`. A failed activation dispatches a bubbling `aster:revival-error` event with the error in `detail`; the next interaction attempts activation again. When installing the loader manually, call the function returned by `installRevival()` to remove its delegated listeners.
 
 SSR route hooks read the nearest router's URL and parameters. Async components on Node can read context across an `await`. On runtimes without `AsyncLocalStorage`, capture context before the first `await` or use the route props. Components can register resource cleanup using `ctx.onCleanup()` on both server and client. Stream consumers can cancel the reader to signal pending generators through `ctx.signal`.
+
+Each client generator execution has its own `ctx.signal`. After a prop restart or unmount, that execution continues to see its aborted signal, including after an `await`. A cleanup registered on an already aborted context runs immediately. Client teardown reports cleanup failures to the console and continues disposing the component.
 
 Island props support plain data, arrays, dates, query parameters, JSX templates, and exported child components. A named callback exported from a compiled client module travels as a module reference. A callback that closes over component locals is recreated by running its owning client component. Include those modules in the client build. Routed islands also restore their matched URL and parameters.
 
@@ -107,6 +111,8 @@ export default {
   },
 };
 ```
+
+For a nonce-based Content Security Policy, pass the response's nonce as `nonce` in the document options and include the matching nonce in the response's `script-src` header. Aster applies it to its import map, module bootstrap, and deferred streaming swap scripts. The application supplies the policy header and generates a fresh nonce for each response.
 
 ---
 

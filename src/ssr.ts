@@ -43,12 +43,13 @@ function applyAttrEntry(
   val: unknown,
   classes: Set<string>,
   styles: Map<string, string>,
-  extraAttrs: string[],
+  extraAttrs: Map<string, string>,
 ) {
   if (!isAttributeName(name) || /^on/i.test(name)) return;
   if (name === 'key' || name === 'ref' || name === 'children') return;
 
   if (name === 'class' || name === 'className') {
+    classes.clear();
     if (typeof val === 'string') {
       for (const token of val.split(/\s+/)) {
         if (token) classes.add(token);
@@ -79,6 +80,7 @@ function applyAttrEntry(
   }
 
   if (name === 'style') {
+    styles.clear();
     if (val && typeof val === 'object') {
       for (const [k, v] of Object.entries(val as Record<string, unknown>)) {
         const prop = toKebab(k);
@@ -93,32 +95,35 @@ function applyAttrEntry(
 
   if (name === 'bind:value') {
     const cur = Array.isArray(val) ? val[0]() : typeof val === 'function' ? val() : val;
-    if (cur != null && cur !== '') extraAttrs.push(`value="${escapeHtml(cur)}"`);
+    if (cur != null && cur !== '') extraAttrs.set('value', `value="${escapeHtml(cur)}"`);
+    else extraAttrs.delete('value');
     return;
   }
 
   if (name === 'bind:checked') {
     const cur = Array.isArray(val) ? val[0]() : typeof val === 'function' ? val() : val;
-    if (cur) extraAttrs.push('checked');
+    if (cur) extraAttrs.set('checked', 'checked');
+    else extraAttrs.delete('checked');
     return;
   }
 
   if (name === 'bind:open') {
     const cur = Array.isArray(val) ? val[0]() : typeof val === 'function' ? val() : val;
-    if (cur) extraAttrs.push('open');
+    if (cur) extraAttrs.set('open', 'open');
+    else extraAttrs.delete('open');
     return;
   }
 
   if (name.startsWith('aria-') && typeof val === 'boolean') {
-    extraAttrs.push(`${name}="${String(val)}"`);
+    extraAttrs.set(name.toLowerCase(), `${name}="${String(val)}"`);
     return;
   }
 
   if (val === true) {
-    extraAttrs.push(name);
+    extraAttrs.set(name.toLowerCase(), name);
   } else if (val !== false && val != null) {
-    extraAttrs.push(`${name}="${escapeHtml(val)}"`);
-  }
+    extraAttrs.set(name.toLowerCase(), `${name}="${escapeHtml(val)}"`);
+  } else extraAttrs.delete(name.toLowerCase());
 }
 
 function hydrateTemplateAttrs(
@@ -135,30 +140,26 @@ function hydrateTemplateAttrs(
 
       const classes = new Set<string>();
       const styles = new Map<string, string>();
-      const extraAttrs: string[] = [];
-      const markerIndices: number[] = [];
-
-      // Collect dynamic marker indices in order and strip them from static attrs
-      let cleaned = rawAttrs.replace(/\s*data-aster-a(\d+)=""/g, (_m, idxStr) => {
-        markerIndices.push(Number(idxStr));
-        return '';
-      });
-
-      // Extract static class="..." so we can merge cleanly with class:* and dynamic class
-      cleaned = cleaned.replace(/\s+class="([^"]*)"/g, (_m, clsStr: string) => {
-        for (const token of clsStr.split(/\s+/)) {
-          if (token) classes.add(token);
+      const extraAttrs = new Map<string, string>();
+      // Walk static attributes and binding markers in source order. Keep the
+      // original quoting and entity encoding for unmodified static attributes.
+      for (const attr of rawAttrs.matchAll(
+        /([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g,
+      )) {
+        const name = attr[1];
+        const marker = /^data-aster-a(\d+)$/.exec(name);
+        if (!marker) {
+          const value = attr[2] ?? attr[3] ?? attr[4] ?? '';
+          if (name === 'class') {
+            classes.clear();
+            for (const token of value.split(/\s+/)) if (token) classes.add(token);
+          } else if (name === 'style') {
+            styles.clear();
+            parseStyleString(value, styles);
+          } else extraAttrs.set(name.toLowerCase(), attr[0]);
+          continue;
         }
-        return '';
-      });
-
-      // Extract static style="..." so we can merge cleanly with style:*, var:*, and style objects
-      cleaned = cleaned.replace(/\s+style="([^"]*)"/g, (_m, styleStr: string) => {
-        parseStyleString(styleStr, styles);
-        return '';
-      });
-
-      for (const idx of markerIndices) {
+        const idx = Number(marker[1]);
         const b = bindings[idx];
         const val = values[idx];
         if (!b) continue;
@@ -174,14 +175,12 @@ function hydrateTemplateAttrs(
       }
 
       const parts: string[] = [];
-      const staticRest = cleaned.trim();
-      if (staticRest) parts.push(staticRest);
       if (classes.size > 0) parts.push(`class="${escapeHtml([...classes].join(' '))}"`);
       if (styles.size > 0) {
         const cssText = [...styles.entries()].map(([k, v]) => `${k}:${v}`).join(';');
         parts.push(`style="${escapeHtml(cssText)}"`);
       }
-      for (const attr of extraAttrs) parts.push(attr);
+      for (const attr of extraAttrs.values()) parts.push(attr);
 
       return `<${tag}${parts.length > 0 ? ' ' + parts.join(' ') : ''}${selfClose}>`;
     },
@@ -535,6 +534,8 @@ export async function renderToStringAsync(view: View, opts: SSROptions = {}): Pr
 // 3. Document Helpers & Out-of-Order Streaming SSR (`renderToStream`)
 // =============================================================================
 export interface DocumentOptions {
+  /** Per-response CSP nonce applied to framework-generated script elements. */
+  nonce?: string;
   title?: string;
   lang?: string;
   head?: string;
@@ -551,11 +552,15 @@ function inlineJson(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
+function scriptNonce(nonce?: string) {
+  return nonce === undefined ? '' : ` nonce="${escapeHtml(nonce)}"`;
+}
+
 function buildDocOpen(opts: DocumentOptions): string {
   const title = escapeHtml(opts.title ?? 'Aster');
   const lang = escapeHtml(opts.lang ?? 'en');
   const importmapTag = opts.importmap
-    ? `<script type="importmap">${inlineJson({ imports: opts.importmap })}</script>`
+    ? `<script type="importmap"${scriptNonce(opts.nonce)}>${inlineJson({ imports: opts.importmap })}</script>`
     : '';
   return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>${title}</title>${importmapTag}${opts.head ?? ''}</head><body><div id="app">`;
 }
@@ -565,7 +570,7 @@ function buildReviveScript(opts: DocumentOptions): string {
   const loader =
     opts.revivalUrl ?? resolveIslandSrc('@fierst/aster/revive', opts.manifest, opts.base);
   const runtime = opts.runtimeUrl ?? resolveIslandSrc('@fierst/aster', opts.manifest, opts.base);
-  return `<script type="module">import{installRevival}from${inlineJson(loader)};installRevival(${inlineJson(runtime)});</script>`;
+  return `<script type="module"${scriptNonce(opts.nonce)}>import{installRevival}from${inlineJson(loader)};installRevival(${inlineJson(runtime)});</script>`;
 }
 
 /** Render an Aster view into a complete HTML5 document with automatic Lazy Revival. */
@@ -584,16 +589,17 @@ export function htmlResponse(view: View, opts: DocumentOptions = {}, status = 20
 }
 
 interface StreamTracker {
+  nonce?: string;
   signal: AbortSignal;
   nextId(): number;
   register(task: Promise<void>): void;
   emit(chunk: string): void;
 }
 
-function buildSwapChunk(id: number, finalHtml: string): string {
+function buildSwapChunk(id: number, finalHtml: string, nonce?: string): string {
   return (
     `<template id="aster-t-${id}">${finalHtml}</template>` +
-    `<script>(function(){var b=document.getElementById("aster-b-${id}"),t=document.getElementById("aster-t-${id}");` +
+    `<script${scriptNonce(nonce)}>(function(){var b=document.getElementById("aster-b-${id}"),t=document.getElementById("aster-t-${id}");` +
     `if(b&&t){b.replaceWith(t.content);t.remove();}var s=document.currentScript;if(s)s.remove();})()</script>`
   );
 }
@@ -651,14 +657,14 @@ async function renderStreamNode(
               }
               if (ctx.signal.aborted) return;
               const resolvedHtml = await renderToStringAsync(lastView, childOpts);
-              tracker.emit(buildSwapChunk(id, resolvedHtml));
+              tracker.emit(buildSwapChunk(id, resolvedHtml, tracker.nonce));
             } catch (err) {
               if (typeof view.p?.fallback === 'function') {
                 const errHtml = await renderToStringAsync(
                   _runWithContext(localCtx, () => view.p.fallback(err, () => {})),
                   childOpts,
                 );
-                tracker.emit(buildSwapChunk(id, errHtml));
+                tracker.emit(buildSwapChunk(id, errHtml, tracker.nonce));
               } else if (!ctx.signal.aborted) {
                 throw err;
               }
@@ -748,6 +754,7 @@ export function renderToStream(view: View, opts: DocumentOptions = {}): Readable
       const earlyChunks: string[] = [];
 
       const tracker: StreamTracker = {
+        nonce: opts.nonce,
         signal: lifetime.signal,
         nextId: () => ++seq,
         register: (task) => {

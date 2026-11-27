@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium, firefox, webkit } from 'playwright';
+import { checkForms } from './form-smoke.mjs';
 
 const repo = fileURLToPath(new URL('../', import.meta.url));
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'aster-release-'));
@@ -107,10 +108,12 @@ try {
   run(app, vp, 'build', '--ssr', 'src/server.tsx', '--outDir', 'dist-server');
   const dist = path.join(app, 'dist');
   const manifest = JSON.parse(fs.readFileSync(path.join(dist, 'aster-manifest.json'), 'utf8'));
-  const { page: renderPage } = await import(
+  const { page: renderPage, formDocuments } = await import(
     pathToFileURL(path.join(app, 'dist-server/server.js')).href
   );
   const html = renderPage(manifest);
+  const nonce = 'Zm9ybS10ZXN0';
+  const forms = await formDocuments(manifest, nonce);
   assert.match(html, /data-aster-src="\/assets\/[^"]+#Panel"/);
   const astroPkg = JSON.parse(fs.readFileSync(bin('astro', 'package.json'), 'utf8'));
   run(
@@ -155,6 +158,7 @@ try {
       await serve(
         dist,
         async (origin) => {
+          await checkForms(page, origin, forms, manifest['/src/Panel.tsx'], nonce);
           await page.goto(origin);
           await page.getByRole('button', { name: 'Clicks: 0' }).click();
           await page.getByRole('button', { name: 'Clicks: 1' }).waitFor();

@@ -7,6 +7,24 @@ import { LESSONS } from '../playground/lessons.ts';
 import aster from '../src/vite.ts';
 
 describe('Oxc build compiler', () => {
+  it('reserves user names in nested scopes, template hoists and two-way setters', () => {
+    const source = 'const _t1=1; export const Field = (_slot, _v) => <input bind:value={_v} />;';
+    for (const code of [compileJSX(source), compileModule(source).code]) {
+      expect(code).toContain('_slot as _slot$');
+      expect(code).toContain('const _t1$ = _tpl(');
+      expect(code).toContain('_slot$(_t1$, [');
+      expect(code).toContain('(_v$) => (_v = _v$)');
+    }
+  });
+  it('stamps local declarations with public aliases, including forward and default exports', () => {
+    const result = compileModule(
+      'export { Inner as Counter, fire as click }; function* Inner(){yield 1} const fire=()=>1; function Card(){return 2} export default Card;',
+      { moduleUrl: '/a.jsx', hmr: true },
+    );
+    expect(result.code).toContain('Inner.__asterSrc = "/a.jsx#Counter"');
+    expect(result.code).toContain('fire.__asterOwnerSrc = "/a.jsx#click"');
+    expect(result.code).toContain('Card.__asterHmrId = "/a.jsx#default"');
+  });
   it('shares slot output with the browser editor for every lesson', () => {
     for (const { starter, solution } of LESSONS) {
       for (const source of [starter, solution])

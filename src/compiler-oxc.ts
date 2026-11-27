@@ -76,31 +76,57 @@ function componentExports(program: Program) {
       !fn.body
     )
       return;
-    const group = fn.generator ? generators : /^[A-Z]/.test(name) ? stateless : callbacks;
+    const group = fn.generator
+      ? generators
+      : /^[A-Z]/.test(name) || /^[A-Z]/.test(exportKey)
+        ? stateless
+        : callbacks;
     group.push({ name, exportKey });
   }
+  const declarations = new Map<string, Node | null>();
+  const exports = new Map<string, string>();
   for (const stmt of program.body) {
-    if (stmt.type !== 'ExportNamedDeclaration' && stmt.type !== 'ExportDefaultDeclaration')
-      continue;
-    const decl = stmt.declaration;
+    const direct =
+      stmt.type === 'ExportNamedDeclaration' || stmt.type === 'ExportDefaultDeclaration';
+    const decl = direct ? stmt.declaration : stmt;
+    function declare(name: string, fn: Node | null) {
+      declarations.set(name, fn);
+      if (direct) exports.set(name, stmt.type === 'ExportDefaultDeclaration' ? 'default' : name);
+    }
     if (decl?.type === 'VariableDeclaration') {
       for (const item of decl.declarations)
-        if (item.id.type === 'Identifier') record(item.id.name, item.init);
+        if (item.id.type === 'Identifier') declare(item.id.name, item.init);
     } else if (decl?.type === 'FunctionDeclaration' && decl.id) {
-      record(
-        decl.id.name,
-        decl,
-        stmt.type === 'ExportDefaultDeclaration' ? 'default' : decl.id.name,
-      );
+      declare(decl.id.name, decl);
+    } else if (stmt.type === 'ExportDefaultDeclaration' && decl?.type === 'Identifier') {
+      exports.set(decl.name, 'default');
+    } else if (
+      stmt.type === 'ExportNamedDeclaration' &&
+      !stmt.source &&
+      stmt.exportKind !== 'type'
+    ) {
+      for (const spec of stmt.specifiers) {
+        if (
+          spec.exportKind === 'type' ||
+          spec.local.type !== 'Identifier' ||
+          exports.has(spec.local.name)
+        )
+          continue;
+        exports.set(
+          spec.local.name,
+          spec.exported.type === 'Identifier' ? spec.exported.name : spec.exported.value,
+        );
+      }
     }
   }
+  for (const [name, key] of exports) record(name, declarations.get(name) ?? null, key);
   return { generators, stateless, callbacks };
 }
 
 export function compileModule(source: string, options: CompileOptions = {}): CompileResult {
   const filename = options.sourceFile ?? options.moduleUrl ?? 'input.tsx';
   const program = parse(source, filename);
-  const emitter = new SlotEmitter();
+  const emitter = new SlotEmitter(source);
   const ranges = new SourceRanges(source, options.runtimeImport ?? '');
   let isEntry = false;
   function expression(node: Node) {

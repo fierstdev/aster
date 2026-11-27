@@ -35,6 +35,42 @@ it('reports unsupported island values in sync, async and streamed SSR', async ()
 });
 
 describe('SSR, Spread Attrs, & Production Manifest Lazy Revival', () => {
+  it('uses one winning attribute in markup order across all server renderers', async () => {
+    for (const [markup, winner] of [
+      ['<input value="old" data-aster-a0="">', 'new'],
+      ['<input data-aster-a0="" value="old">', 'old'],
+    ]) {
+      const view = _slot(_tpl(markup, [{ kind: 'spread', path: [0] }]), [{ value: 'new' }]);
+      for (const result of [
+        renderToString(view),
+        await renderToStringAsync(view),
+        await streamResponse(view).text(),
+      ]) {
+        expect(result).toContain(`<input value="${winner}">`);
+      }
+    }
+  });
+  it('matches literal dots and survives malformed percent escapes in either router', () => {
+    const native = Object.getOwnPropertyDescriptor(globalThis, 'URLPattern');
+    const routes = [
+      { path: '/feed.xml', component: () => null },
+      { path: '/users/:id', component: () => null },
+    ];
+    function verify() {
+      expect(matchRoute(routes, '/feedXxml')).toBeNull();
+      expect(matchRoute(routes, '/feed.xml')?.pathname).toBe('/feed.xml');
+      expect(matchRoute(routes, '/users/%')?.params.id).toBe('%');
+      expect(matchRoute(routes, '/users/a%20b')?.params.id).toBe('a b');
+    }
+    try {
+      verify();
+      Object.defineProperty(globalThis, 'URLPattern', { value: undefined, configurable: true });
+      verify();
+    } finally {
+      if (native) Object.defineProperty(globalThis, 'URLPattern', native);
+      else Reflect.deleteProperty(globalThis, 'URLPattern');
+    }
+  });
   it('advances generator once, escapes HTML, emits <aster-island>, and runs finally cleanup', () => {
     let cleaned = false;
     const _t1 = _tpl('<div class="card"><!--aster:0--></div>', [{ kind: 'node', path: [0, 0] }]);
