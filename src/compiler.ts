@@ -95,7 +95,7 @@ function isEmptyOrCommentOnly(code: string): boolean {
 // =============================================================================
 const VLQ_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
-function encodeVLQ(value: number): string {
+export function encodeVLQ(value: number): string {
   let v = value < 0 ? (-value << 1) + 1 : value << 1;
   let out = '';
   do {
@@ -134,7 +134,7 @@ function buildLineSourceMap(
   };
 }
 
-class JSXLowerer {
+export class JSXLowerer {
   src: string;
   pos = 0;
   hoisted: HoistedTpl[] = [];
@@ -430,7 +430,7 @@ class JSXLowerer {
     }
   }
 
-  private cleanJsxText(raw: string): string {
+  cleanJsxText(raw: string): string {
     if (!/[\r\n]/.test(raw)) return raw;
     const lines = raw.split(/\r\n|\n|\r/);
     const cleaned: string[] = [];
@@ -686,10 +686,25 @@ function collectExportedComponents(jsBody: string) {
  * Used by `src/vite.ts` for source-mapped dev/build compilation and automatic HMR.
  */
 export function compileModule(source: string, options: CompileOptions = {}): CompileResult {
-  const runtimeImport = options.runtimeImport ?? '@fierst/aster';
   const lowerer = new JSXLowerer(source);
   const body = lowerer.run();
-  const { generators, stateless, callbacks } = collectExportedComponents(lowerer.declarationSource);
+  return finishModule(
+    source,
+    options,
+    lowerer,
+    body,
+    collectExportedComponents(lowerer.declarationSource),
+  );
+}
+
+export function finishModule(
+  source: string,
+  options: CompileOptions,
+  lowerer: JSXLowerer,
+  body: string,
+  { generators, stateless, callbacks }: ReturnType<typeof collectExportedComponents>,
+): CompileResult {
+  const runtimeImport = options.runtimeImport ?? '@fierst/aster';
 
   const footer: string[] = [];
   if (options.moduleUrl) {

@@ -37,7 +37,7 @@ function matchesPattern(id: string, pattern: FilterPattern): boolean {
   return id.includes(pattern);
 }
 
-export function aster(options: AsterPluginOptions = {}) {
+export function aster(options: AsterPluginOptions = {}, compile = compileModule) {
   const include = options.include ?? ['.tsx', '.jsx'];
   const exclude = options.exclude ?? [];
   const manifestFile = options.manifestFile ?? 'aster-manifest.json';
@@ -111,7 +111,7 @@ export function aster(options: AsterPluginOptions = {}) {
       if (exclude.some((pat) => matchesPattern(cleanId, pat))) return null;
 
       const relPath = toRelPath(cleanId);
-      const result = compileModule(code, {
+      const result = compile(code, {
         runtimeImport: options.runtimeImport ?? '@fierst/aster',
         moduleUrl: relPath,
         sourceFile: relPath,

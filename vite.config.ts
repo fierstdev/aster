@@ -3,11 +3,12 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite-plus';
 import { playwright } from 'vite-plus/test/browser-playwright';
 import aster from './src/vite.ts';
+import { compileOxc } from './experiments/oxc/compiler.mjs';
 
 const rootDir = fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig({
-  plugins: [aster()],
+  plugins: [process.env.ASTER_EXPERIMENT_OXC === '1' ? aster({}, compileOxc) : aster()],
 
   resolve: {
     alias: {
