@@ -1,6 +1,6 @@
 {
   "name": "@fierst/aster",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Browser-native, zero-VDOM web framework by Fierst LLC powered by Generator Components (function*), Slot-Compiled Templates, Unified Web Components, and Automatic Lazy Revival — built on Vite+.",
   "keywords": [
     "aster",
@@ -100,6 +100,7 @@
   "devDependencies": {
     "@types/node": "^26.6.9",
     "@vitest/browser-playwright": "5.1.1",
+    "meriyah": "^7.4.3",
     "playwright": "^1.50.0",
     "typescript": "^6.0.3",
     "vite-plus": "^1.0.0"

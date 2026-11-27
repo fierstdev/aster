@@ -2,6 +2,7 @@ node_modules/
 dist/
 dist-site/
 .vite/
+.vitest/attachments/
 .aster/
 *.tgz
 *.log

@@ -12,7 +12,7 @@ Maintaining a custom zero-dependency TypeScript stripper, custom dev server, Ser
 
 Aster adopts **Vite+ (`vp`) as its first-class default toolchain**, while keeping the **runtime 100% browser-native, zero-dependency, and completely unopinionated** about backends, databases, authentication, or CSS methodologies:
 
-1. **Oxc parses JSX and TSX at build time.** The Vite plugin runs before TypeScript stripping so the slot emitter can refer to the author's original source. Oxc supplies the syntax tree and export declarations. Aster handles slot lowering, two-way bindings, and revival metadata. The browser playground shares the emitter and uses its standalone JavaScript parser.
+1. **Oxc parses JSX and TSX at build time.** The Vite plugin runs before TypeScript stripping so the slot emitter can refer to the author's original source. Oxc supplies the syntax tree and export declarations. The learning editor parses JavaScript and JSX with Meriyah. Both paths use Aster's shared syntax-tree transformation and slot emitter.
 2. **One Unified Config (`vite.config.ts`):**
    `vp dev` (HMR), `vp build` (Rolldown), `vp pack` (tsdown library ESM + `.d.ts` output), `vp test` (Vitest), and `vp check` (Oxfmt + Oxlint + TS 7 type checking) all live in a single config file with a single `vite-plus` devDependency.
 3. **Zero Runtime Dependencies & Zero Backend Opinions:**

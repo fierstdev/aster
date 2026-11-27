@@ -6,6 +6,7 @@ import {
   type ComponentFn,
   type CompiledTemplate,
   type SlotBinding,
+  type Signal,
   type View,
 } from './runtime.ts';
 
@@ -91,9 +92,7 @@ export const jsxDEV = jsx;
 export namespace JSX {
   export type Element = View;
 
-  export type ElementType =
-    | keyof IntrinsicElements
-    | ((props: any, ctx: any) => View | Generator<View, any, any> | AsyncGenerator<View, any, any>);
+  export type ElementType = keyof IntrinsicElements | ComponentFn;
 
   export interface ElementChildrenAttribute {
     children: {};
@@ -103,7 +102,14 @@ export namespace JSX {
     key?: string | number;
   }
 
-  export interface BaseAttrs {
+  type Binding<T> = T | Signal<T> | readonly [() => T, (value: T) => void];
+  type Handler<E extends globalThis.Element, Ev extends Event> = (
+    event: Ev & { currentTarget: E },
+  ) => unknown;
+  export interface BaseAttrs<
+    E extends globalThis.Element = HTMLElement,
+  > extends IntrinsicAttributes {
+    spellcheck?: boolean | 'false' | 'true';
     id?: string;
     class?: string;
     className?: string;
@@ -131,34 +137,92 @@ export namespace JSX {
     commandfor?: string;
     command?: string;
     for?: string;
-    ref?: (el: any) => void;
+    ref?: (el: E) => void;
     children?: View;
     // Aster native directives
-    'bind:value'?: any;
-    'bind:checked'?: any;
-    'bind:open'?: any;
+    'bind:value'?: Binding<string> | Binding<number>;
+    'bind:checked'?: Binding<boolean>;
+    'bind:open'?: Binding<boolean>;
     // Standard DOM events
-    onClick?: (e: MouseEvent) => any;
-    onInput?: (e: Event) => any;
-    onChange?: (e: Event) => any;
-    onSubmit?: (e: SubmitEvent) => any;
-    onKeyDown?: (e: KeyboardEvent) => any;
-    onKeyUp?: (e: KeyboardEvent) => any;
-    onFocus?: (e: FocusEvent) => any;
-    onBlur?: (e: FocusEvent) => any;
-    onToggle?: (e: Event) => any;
-    onClose?: (e: Event) => any;
+    onClick?: Handler<E, MouseEvent>;
+    onInput?: Handler<E, Event>;
+    onChange?: Handler<E, Event>;
+    onSubmit?: Handler<E, SubmitEvent>;
+    onKeyDown?: Handler<E, KeyboardEvent>;
+    onKeyUp?: Handler<E, KeyboardEvent>;
+    onFocus?: Handler<E, FocusEvent>;
+    onBlur?: Handler<E, FocusEvent>;
+    onToggle?: Handler<E, Event>;
+    onClose?: Handler<E, Event>;
     // Allow class:*, style:*, var:*, on:*, data-*, aria-*, and custom element attrs
     [key: `class:${string}`]: boolean | undefined;
     [key: `style:${string}`]: string | number | undefined;
     [key: `var:${string}`]: string | number | undefined;
-    [key: `on:${string}`]: ((e: Event) => any) | undefined;
+    // Custom event names can carry application-defined CustomEvent details.
+    [key: `on:${string}`]:
+      | { handle(event: Event & { currentTarget: E }): unknown }['handle']
+      | undefined;
     [key: `data-${string}`]: string | number | boolean | undefined;
     [key: `aria-${string}`]: string | number | boolean | undefined;
-    [key: string]: any;
   }
 
-  export interface IntrinsicElements {
-    [elemName: string]: BaseAttrs;
+  // JSX handlers follow the browser event name, with customary word breaks.
+  type EventPrefix =
+    | 'animation'
+    | 'before'
+    | 'composition'
+    | 'context'
+    | 'drag'
+    | 'focus'
+    | 'key'
+    | 'mouse'
+    | 'pointer'
+    | 'touch'
+    | 'transition'
+    | 'wheel'
+    | 'dbl'
+    | 'selection'
+    | 'scroll'
+    | 'got'
+    | 'lost';
+  type CamelEvent<K extends string> =
+    | {
+        [P in EventPrefix]: K extends `${P}${infer Tail}`
+          ? Tail extends ''
+            ? never
+            : `${Capitalize<P>}${CamelEvent<Tail>}`
+          : never;
+      }[EventPrefix]
+    | Capitalize<K>;
+  type EventAttrs<E extends globalThis.Element> = {
+    [K in keyof GlobalEventHandlersEventMap as `on:${K}` | `on${CamelEvent<K>}`]?: Handler<
+      E,
+      GlobalEventHandlersEventMap[K]
+    >;
+  };
+  type NativeAttrs<E extends globalThis.Element> = BaseAttrs<E> &
+    EventAttrs<E> & {
+      [
+        K in keyof E as K extends string
+          ? K extends keyof BaseAttrs<E> | `on${string}`
+            ? never
+            : E[K] extends string | number | boolean | null
+              ? K | Lowercase<K>
+              : never
+          : never
+      ]?: E[K];
+    };
+
+  type HtmlTags = { [K in keyof HTMLElementTagNameMap]: NativeAttrs<HTMLElementTagNameMap[K]> };
+  type SvgTags = {
+    [K in Exclude<keyof SVGElementTagNameMap, keyof HtmlTags>]: BaseAttrs<SVGElementTagNameMap[K]> &
+      EventAttrs<SVGElementTagNameMap[K]> &
+      Record<string, unknown>;
+  };
+
+  export interface IntrinsicElements extends HtmlTags, SvgTags {
+    [tag: `${string}-${string}`]: BaseAttrs<HTMLElement> &
+      EventAttrs<HTMLElement> &
+      Record<string, unknown>;
   }
 }

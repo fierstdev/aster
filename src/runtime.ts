@@ -24,6 +24,8 @@ export interface Signal<T> {
 export interface Ctx<P = any> extends Iterable<P> {
   readonly signal: AbortSignal;
   refresh(): void;
+  /** Run once after this execution's next successful client DOM patch. */
+  afterRender(callback: () => void): void;
   onCleanup(cb: () => void): void;
 }
 
@@ -58,7 +60,34 @@ export interface CompView<P = any> {
   readonly src?: string;
 }
 
-export type ComponentFn<P = any> = (props: P, ctx: Ctx<P>) => any;
+export type ComponentFn<P = any> = (
+  props: P,
+  ctx: Ctx<P>,
+) =>
+  | View
+  | Generator<View, View | void, NoInfer<P>>
+  | AsyncGenerator<View, View | void, NoInfer<P>>;
+
+export function isAsyncComponentResult(
+  result: ReturnType<ComponentFn>,
+): result is AsyncGenerator<View, View | void, any> {
+  return (
+    typeof result === 'object' &&
+    result !== null &&
+    Symbol.asyncIterator in result &&
+    typeof result[Symbol.asyncIterator] === 'function'
+  );
+}
+export function isSyncComponentResult(
+  result: ReturnType<ComponentFn>,
+): result is Generator<View, View | void, any> {
+  return (
+    typeof result === 'object' &&
+    result !== null &&
+    'next' in result &&
+    typeof result.next === 'function'
+  );
+}
 
 export type View = SlotView | CompView | View[] | string | number | boolean | null | undefined;
 
@@ -476,6 +505,8 @@ export function scope(strings: TemplateStringsArray, ...values: any[]): string {
 // 5. Slot Mounting, Flat-Array Patching, Spread Props, & Keyed Array Diffing
 // =============================================================================
 interface Owner {
+  callbacks?: WeakMap<(...args: any[]) => any, (...args: any[]) => any>;
+  readonly signal: AbortSignal;
   schedule(): void;
   onCleanup(cb: () => void): void;
   onError?: (err: unknown) => void;
@@ -503,6 +534,37 @@ function toKebab(prop: string): string {
 
 export function isAttributeName(name: string): boolean {
   return /^[A-Za-z_:][A-Za-z0-9_:.-]*$/.test(name);
+}
+
+export function bindingSetter(name: string, binding: unknown): (value: unknown) => void {
+  const set = Array.isArray(binding)
+    ? binding[1]
+    : typeof binding === 'function' && 'set' in binding
+      ? binding.set
+      : undefined;
+  if (typeof set !== 'function')
+    throw new TypeError(`${name} needs a writable variable, property, signal, or [get, set] pair.`);
+  return set;
+}
+
+function invokeHandler<T>(owner: Owner | null, name: string, fn: (value: T) => unknown, value: T) {
+  const signal = owner?.signal;
+  const report = (error: unknown) => {
+    if (signal?.aborted) return;
+    if (owner?.onError) owner.onError(error);
+    else console.error(`[Aster ${name} handler error]`, error);
+  };
+  try {
+    const result = fn(value);
+    if (result && typeof (result as PromiseLike<unknown>).then === 'function')
+      void Promise.resolve(result).then(() => {
+        if (!signal?.aborted) owner?.schedule();
+      }, report);
+  } catch (error) {
+    report(error);
+  } finally {
+    owner?.schedule();
+  }
 }
 
 function setAttr(
@@ -534,11 +596,7 @@ function setAttr(
       state.bound = (e: Event) => {
         const fn = state.fn;
         if (typeof fn !== 'function') return;
-        const res = fn(e);
-        owner?.schedule();
-        if (res && typeof res.finally === 'function') {
-          res.finally(() => owner?.schedule());
-        }
+        invokeHandler(owner, evName, fn, e);
       };
       el.addEventListener(evName, state.bound);
       state.unlisten = () => el.removeEventListener(evName, state.bound);
@@ -552,7 +610,7 @@ function setAttr(
   if (name === 'bind:value' || name === 'bind:checked' || name === 'bind:open') {
     const isTuple = Array.isArray(next);
     const get = isTuple ? next[0] : next;
-    const set = isTuple ? next[1] : next?.set;
+    const set = bindingSetter(name, next);
     state.set = set;
 
     // During Lazy Revival claiming, preserve any user input typed before the component woke up!
@@ -600,8 +658,7 @@ function setAttr(
               : el.type === 'number' || el.type === 'range'
                 ? Number(el.value)
                 : el.value;
-        state.set?.(raw);
-        owner?.schedule();
+        invokeHandler(owner, name, state.set, raw);
       };
       el.addEventListener(ev, state.bound);
       state.unlisten = () => el.removeEventListener(ev, state.bound);
@@ -680,7 +737,9 @@ function setSpread(
     for (const k of Object.keys(prevObj)) {
       if (!nextObj || !(k in nextObj)) {
         const ks = state.keys[k] ?? (state.keys[k] = {});
-        setAttr(el, k, null, prevObj[k], owner, ks, claiming);
+        // Removing a two-way listener transfers control back to the field.
+        if (k !== 'bind:value' && k !== 'bind:checked' && k !== 'bind:open')
+          setAttr(el, k, null, prevObj[k], owner, ks, claiming);
         ks.unlisten?.();
         delete state.keys[k];
       }
@@ -721,9 +780,13 @@ function mountSlot(
     const resolved: (Node | null)[] = compiled.bindings.map((b) =>
       claimPathToNode(claimTarget.parent, b.path, claimTarget.start),
     );
-    const valid = resolved.every((n) => n != null);
+    const missing = resolved.findIndex((node, index) =>
+      compiled.bindings[index].kind === 'node'
+        ? node?.nodeType !== 8 || (node as Comment).data !== 'aster:' + index
+        : node?.nodeType !== 1,
+    );
 
-    if (valid) {
+    if (missing === -1) {
       nodes = resolved as Node[];
       if (claimTarget.start && claimTarget.end) {
         start = claimTarget.start;
@@ -738,6 +801,15 @@ function mountSlot(
       }
     } else {
       // Graceful SSR mismatch fallback: clear claimed range and mount fresh
+      if (__DEV__) {
+        const island = (parent instanceof Element ? parent : parent.parentElement)?.closest(
+          '[data-aster-src]',
+        );
+        const binding = compiled.bindings[missing];
+        console.warn(
+          `[Aster] Claim mismatch in ${island?.getAttribute('data-aster-src') ?? 'SSR root'}: slot ${missing} (${binding.kind}) at DOM path [${binding.path.join(', ')}] did not match. Remounting this range.`,
+        );
+      }
       claiming = false;
       if (claimTarget.start && claimTarget.end) {
         clearRange(claimTarget.start, claimTarget.end);
@@ -868,14 +940,26 @@ function wrapChildProps(props: any, parentOwner: Owner | null): any {
         (key.startsWith('on') && key.length > 2 && key[2] === key[2].toUpperCase()))
     ) {
       if (!wrapped) wrapped = { ...props };
-      wrapped[key] = (...args: any[]) => {
-        const res = val(...args);
-        parentOwner.schedule();
-        if (res && typeof res.finally === 'function') {
-          res.finally(() => parentOwner.schedule());
-        }
-        return res;
-      };
+      const callbacks = (parentOwner.callbacks ??= new WeakMap());
+      let handler = callbacks.get(val);
+      if (!handler) {
+        handler = (...args: any[]) => {
+          const signal = parentOwner.signal;
+          try {
+            const result = val(...args);
+            if (result && typeof result.then === 'function') {
+              return Promise.resolve(result).finally(() => {
+                if (!signal.aborted) parentOwner.schedule();
+              });
+            }
+            return result;
+          } finally {
+            parentOwner.schedule();
+          }
+        };
+        callbacks.set(val, handler);
+      }
+      wrapped[key] = handler;
     }
   }
   return wrapped ?? props;
@@ -1264,8 +1348,7 @@ function shallowEqualProps(a: any, b: any): boolean {
   if (keysA.length !== keysB.length) return false;
   for (let i = 0; i < keysA.length; i++) {
     const k = keysA[i];
-    if (!(k in b)) return false;
-    if (typeof a[k] === 'function' && typeof b[k] === 'function') continue;
+    if (!Object.hasOwn(b, k)) return false;
     if (!Object.is(a[k], b[k])) return false;
   }
   return true;
@@ -1311,6 +1394,7 @@ export function mountComponent(
   let gen: any = null;
   let isAsync = false;
   let asyncRunId = 0;
+  let afterRender: (() => unknown)[] | undefined;
   let cleanups = new Set<() => void>();
   let ac = new AbortController();
   const slotState: any = {};
@@ -1346,6 +1430,9 @@ export function mountComponent(
       refresh: () => {
         if (!signal.aborted) schedule();
       },
+      afterRender(callback) {
+        if (!signal.aborted) (afterRender ??= []).push(callback);
+      },
       onCleanup: (cb) => {
         if (signal.aborted) runCleanup(cb);
         else callbacks.add(cb);
@@ -1364,13 +1451,16 @@ export function mountComponent(
   let ctx = executionContext(ac.signal, cleanups);
 
   const owner: Owner = {
+    get signal() {
+      return ac.signal;
+    },
     schedule,
     onCleanup: (cb) => cleanups.add(cb),
     onError,
     context: localContext,
   };
 
-  function applyResult(view: any) {
+  function patchResult(view: any) {
     if (disposed) return;
     if (claimRange && view && typeof view === 'object' && view[COMP]) {
       const target = claimRange;
@@ -1428,6 +1518,35 @@ export function mountComponent(
     patchNodeSlot(end, view, slotState, owner);
   }
 
+  function applyResult(view: any) {
+    const signal = ac.signal;
+    patchResult(view);
+    if (!afterRender || signal.aborted) return;
+    const batch = afterRender;
+    afterRender = undefined;
+    const previousObserver = activeObserver;
+    activeObserver = null;
+    const report = (error: unknown) => {
+      if (signal.aborted) return;
+      if (onError) onError(error);
+      else console.error('[Aster afterRender error]', error);
+    };
+    try {
+      for (const callback of batch) {
+        if (signal.aborted) break;
+        try {
+          const result = callback();
+          if (result && typeof (result as PromiseLike<unknown>).then === 'function')
+            void Promise.resolve(result).catch(report);
+        } catch (error) {
+          report(error);
+        }
+      }
+    } finally {
+      activeObserver = previousObserver;
+    }
+  }
+
   function stepSync() {
     if (disposed || running) {
       dirty = true;
@@ -1444,13 +1563,13 @@ export function mountComponent(
     try {
       if (!gen) {
         const res = activeFn(currentProps, ctx);
-        if (res && typeof res[Symbol.asyncIterator] === 'function') {
+        if (isAsyncComponentResult(res)) {
           gen = res;
           isAsync = true;
-          pumpAsync(++asyncRunId, res);
+          void pumpAsync(++asyncRunId, res);
           return;
         }
-        if (res && typeof res.next === 'function') {
+        if (isSyncComponentResult(res)) {
           gen = res;
           const out = gen.next(currentProps);
           if (__DEV__ && out.done && out.value !== undefined && out.value !== null) {
@@ -1468,6 +1587,7 @@ export function mountComponent(
         if (!out.done || out.value !== undefined) applyResult(out.value);
       }
     } catch (err) {
+      afterRender = undefined;
       if (onError) {
         onError(err);
         return;
@@ -1492,6 +1612,7 @@ export function mountComponent(
         if (out.done) break;
       }
     } catch (err: any) {
+      if (runId === asyncRunId) afterRender = undefined;
       if (err?.name === 'AbortError') return;
       if (disposed || runId !== asyncRunId) {
         reportCleanupError(err);
@@ -1517,6 +1638,7 @@ export function mountComponent(
   }
 
   function teardownExecution() {
+    afterRender = undefined;
     asyncRunId++;
     clearDeps();
     ac.abort();

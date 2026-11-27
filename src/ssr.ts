@@ -12,6 +12,9 @@ import {
   _runWithContext,
   _setAsyncContextStorage,
   isAttributeName,
+  bindingSetter,
+  isAsyncComponentResult,
+  isSyncComponentResult,
   type SlotView,
   type View,
 } from './runtime.ts';
@@ -93,27 +96,17 @@ function applyAttrEntry(
     return;
   }
 
-  if (name === 'bind:value') {
-    const cur = Array.isArray(val) ? val[0]() : typeof val === 'function' ? val() : val;
-    if (cur != null && cur !== '') extraAttrs.set('value', `value="${escapeHtml(cur)}"`);
-    else extraAttrs.delete('value');
+  if (name === 'bind:value' || name === 'bind:checked' || name === 'bind:open') {
+    bindingSetter(name, val);
+    const getter = Array.isArray(val) ? val[0] : val;
+    const value = typeof getter === 'function' ? getter() : getter;
+    const attr = name.slice(5);
+    if (attr === 'value' && value != null && value !== '')
+      extraAttrs.set(attr, `value="${escapeHtml(value)}"`);
+    else if (attr !== 'value' && value) extraAttrs.set(attr, attr);
+    else extraAttrs.delete(attr);
     return;
   }
-
-  if (name === 'bind:checked') {
-    const cur = Array.isArray(val) ? val[0]() : typeof val === 'function' ? val() : val;
-    if (cur) extraAttrs.set('checked', 'checked');
-    else extraAttrs.delete('checked');
-    return;
-  }
-
-  if (name === 'bind:open') {
-    const cur = Array.isArray(val) ? val[0]() : typeof val === 'function' ? val() : val;
-    if (cur) extraAttrs.set('open', 'open');
-    else extraAttrs.delete('open');
-    return;
-  }
-
   if (name.startsWith('aria-') && typeof val === 'boolean') {
     extraAttrs.set(name.toLowerCase(), `${name}="${String(val)}"`);
     return;
@@ -280,7 +273,7 @@ export interface SSROptions {
 
 function makeSsrCtx(props: any, parentSignal?: AbortSignal) {
   const controller = new AbortController();
-  const cleanups = new Set<() => void>();
+  const cleanups = new Set<() => unknown>();
   const abort = () => controller.abort();
   if (parentSignal?.aborted) abort();
   else parentSignal?.addEventListener('abort', abort, { once: true });
@@ -288,22 +281,42 @@ function makeSsrCtx(props: any, parentSignal?: AbortSignal) {
     signal: controller.signal,
     abort,
     refresh() {},
-    onCleanup(callback: () => void) {
+    afterRender() {},
+    onCleanup(callback: () => unknown) {
       cleanups.add(callback);
     },
-    dispose() {
+    dispose(waitForCleanup: boolean, cause?: unknown) {
       parentSignal?.removeEventListener('abort', abort);
       abort();
       const errors: unknown[] = [];
+      const pending: Promise<void>[] = [];
       for (const cleanup of cleanups) {
         try {
-          cleanup();
+          const result = cleanup();
+          if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+            pending.push(
+              Promise.resolve(result).then(
+                () => {},
+                (error) => {
+                  if (waitForCleanup) errors.push(error);
+                  else console.error('[Aster SSR cleanup error]', error);
+                },
+              ),
+            );
+          }
         } catch (error) {
           errors.push(error);
         }
       }
       cleanups.clear();
-      if (errors.length) throw new AggregateError(errors, 'SSR component cleanup failed');
+      const finish = () => {
+        if (!errors.length) return;
+        const failure = new AggregateError(errors, 'SSR component cleanup failed', { cause });
+        if (parentSignal?.aborted) console.error('[Aster SSR cleanup error]', failure);
+        else throw failure;
+      };
+      if (waitForCleanup && pending.length) return Promise.all(pending).then(finish);
+      finish();
     },
     [Symbol.iterator]() {
       let used = false;
@@ -365,21 +378,24 @@ export function renderToString(view: View, opts: SSROptions = {}): string {
 
     const ctx = makeSsrCtx(view.p);
 
+    let renderFailure: unknown;
     let innerHtml = '';
     try {
       const res = _runWithContext(localCtx, () => view[COMP](view.p, ctx));
-      if (res && typeof res[Symbol.asyncIterator] === 'function') {
+      if (isAsyncComponentResult(res)) {
         // Sync SSR cannot await async generators; clean up immediately
         ctx.abort();
-        res.return?.();
+        void Promise.resolve(res.return?.(undefined)).catch((error) =>
+          console.error('[Aster component cleanup error]', error),
+        );
         innerHtml = '';
-      } else if (res && typeof res.next === 'function') {
+      } else if (isSyncComponentResult(res)) {
         try {
           const out = _runWithContext(localCtx, () => res.next(view.p));
-          innerHtml = renderToString(out.value, childOpts);
+          innerHtml = renderToString(out.value ?? null, childOpts);
         } finally {
           ctx.abort();
-          if (typeof res.return === 'function') res.return();
+          if (typeof res.return === 'function') res.return(undefined);
         }
       } else {
         const ownerSrc = (view[COMP] as any).__asterOwnerSrc;
@@ -390,6 +406,7 @@ export function renderToString(view: View, opts: SSROptions = {}): string {
         innerHtml = renderToString(res, childOpts);
       }
     } catch (err) {
+      renderFailure = err;
       if (typeof view.p?.fallback === 'function') {
         innerHtml = renderToString(
           _runWithContext(localCtx, () => view.p.fallback(err, () => {})),
@@ -399,7 +416,7 @@ export function renderToString(view: View, opts: SSROptions = {}): string {
         throw err;
       }
     } finally {
-      ctx.dispose();
+      ctx.dispose(false, renderFailure);
     }
 
     if (islandSrc) {
@@ -467,30 +484,31 @@ export async function renderToStringAsync(view: View, opts: SSROptions = {}): Pr
 
     const ctx = makeSsrCtx(view.p, opts._signal);
 
+    let renderFailure: unknown;
     let innerHtml = '';
     try {
       const res = _runWithContext(localCtx, () => view[COMP](view.p, ctx));
-      if (res && typeof res[Symbol.asyncIterator] === 'function') {
+      if (isAsyncComponentResult(res)) {
         let lastView: View = null;
         try {
           while (true) {
             ctx.signal.throwIfAborted();
             const out = await _runWithContext(localCtx, () => res.next(view.p));
-            if (!out.done || out.value !== undefined) lastView = out.value;
+            if (!out.done || out.value !== undefined) lastView = out.value ?? null;
             if (out.done) break;
           }
           innerHtml = await renderToStringAsync(lastView, childOpts);
         } finally {
           ctx.abort();
-          if (typeof res.return === 'function') await res.return();
+          if (typeof res.return === 'function') await res.return(undefined);
         }
-      } else if (res && typeof res.next === 'function') {
+      } else if (isSyncComponentResult(res)) {
         try {
           const out = _runWithContext(localCtx, () => res.next(view.p));
-          innerHtml = await renderToStringAsync(out.value, childOpts);
+          innerHtml = await renderToStringAsync(out.value ?? null, childOpts);
         } finally {
           ctx.abort();
-          if (typeof res.return === 'function') res.return();
+          if (typeof res.return === 'function') res.return(undefined);
         }
       } else {
         const ownerSrc = (view[COMP] as any).__asterOwnerSrc;
@@ -501,6 +519,7 @@ export async function renderToStringAsync(view: View, opts: SSROptions = {}): Pr
         innerHtml = await renderToStringAsync(res, childOpts);
       }
     } catch (err) {
+      renderFailure = err;
       if (typeof view.p?.fallback === 'function') {
         innerHtml = await renderToStringAsync(
           _runWithContext(localCtx, () => view.p.fallback(err, () => {})),
@@ -510,7 +529,7 @@ export async function renderToStringAsync(view: View, opts: SSROptions = {}): Pr
         throw err;
       }
     } finally {
-      ctx.dispose();
+      await ctx.dispose(true, renderFailure);
     }
 
     if (islandSrc) {
@@ -631,18 +650,19 @@ async function renderStreamNode(
     let deferredCleanup = false;
     let iterator: AsyncGenerator | undefined;
 
+    let renderFailure: unknown;
     let innerHtml = '';
     try {
       const res = _runWithContext(localCtx, () => view[COMP](view.p, ctx));
-      if (res && typeof res[Symbol.asyncIterator] === 'function') {
+      if (isAsyncComponentResult(res)) {
         // Pull the first yielded view immediately (loading skeleton) for fast TTFB
         iterator = res;
         const first = await _runWithContext(localCtx, () => res.next(view.p));
         if (first.done) {
-          innerHtml = await renderStreamNode(first.value, childOpts, tracker);
+          innerHtml = await renderStreamNode(first.value ?? null, childOpts, tracker);
         } else {
           const id = tracker.nextId();
-          const fallbackHtml = await renderStreamNode(first.value, childOpts, tracker);
+          const fallbackHtml = await renderStreamNode(first.value ?? null, childOpts, tracker);
           innerHtml = `<aster-b id="aster-b-${id}">${fallbackHtml}</aster-b>`;
 
           // Pump the remaining async yields out-of-order and stream swap script on completion
@@ -652,13 +672,14 @@ async function renderStreamNode(
             try {
               while (!ctx.signal.aborted) {
                 const step = await _runWithContext(localCtx, () => res.next(view.p));
-                if (!step.done || step.value !== undefined) lastView = step.value;
+                if (!step.done || step.value !== undefined) lastView = step.value ?? null;
                 if (step.done) break;
               }
               if (ctx.signal.aborted) return;
               const resolvedHtml = await renderToStringAsync(lastView, childOpts);
               tracker.emit(buildSwapChunk(id, resolvedHtml, tracker.nonce));
             } catch (err) {
+              renderFailure = err;
               if (typeof view.p?.fallback === 'function') {
                 const errHtml = await renderToStringAsync(
                   _runWithContext(localCtx, () => view.p.fallback(err, () => {})),
@@ -671,21 +692,21 @@ async function renderStreamNode(
             } finally {
               ctx.abort();
               try {
-                await res.return?.();
+                await res.return?.(undefined);
               } finally {
-                ctx.dispose();
+                await ctx.dispose(true, renderFailure);
               }
             }
           })();
           tracker.register(task);
         }
-      } else if (res && typeof res.next === 'function') {
+      } else if (isSyncComponentResult(res)) {
         try {
           const out = _runWithContext(localCtx, () => res.next(view.p));
-          innerHtml = await renderStreamNode(out.value, childOpts, tracker);
+          innerHtml = await renderStreamNode(out.value ?? null, childOpts, tracker);
         } finally {
           ctx.abort();
-          if (typeof res.return === 'function') res.return();
+          if (typeof res.return === 'function') res.return(undefined);
         }
       } else {
         const ownerSrc = (view[COMP] as any).__asterOwnerSrc;
@@ -696,6 +717,7 @@ async function renderStreamNode(
         innerHtml = await renderStreamNode(res, childOpts, tracker);
       }
     } catch (err) {
+      renderFailure = err;
       if (typeof view.p?.fallback === 'function') {
         innerHtml = await renderStreamNode(
           _runWithContext(localCtx, () => view.p.fallback(err, () => {})),
@@ -711,7 +733,7 @@ async function renderStreamNode(
         try {
           await iterator?.return(undefined);
         } finally {
-          ctx.dispose();
+          await ctx.dispose(true, renderFailure);
         }
       }
     }

@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium, firefox, webkit } from 'playwright';
+import { checkEditor } from './workflow-smoke.mjs';
 import { checkForms } from './form-smoke.mjs';
 
 const repo = fileURLToPath(new URL('../', import.meta.url));
@@ -103,16 +104,63 @@ try {
   run(app, vp, 'check');
   // Include an SSR island in the client graph without mounting it in the scaffolded app.
   fs.cpSync(path.join(repo, 'tests/fixtures/consumer'), app, { recursive: true });
-  fs.appendFileSync(path.join(app, 'src/main.tsx'), "\nimport './Panel';\n");
+  fs.copyFileSync(
+    path.join(repo, 'playground/profile-editor.tsx'),
+    path.join(app, 'src/profile-editor.tsx'),
+  );
+  fs.appendFileSync(
+    path.join(app, 'src/profile-editor.tsx'),
+    `
+import {render} from '@fierst/aster';
+export function mountProfileDemo(container: Element) { return render(<ProfileDemo />, container); }
+`,
+  );
+  fs.appendFileSync(
+    path.join(app, 'src/server.tsx'),
+    `
+import { ProfileDemo } from './profile-editor';
+export async function editorDocuments(manifest: RevivalManifest) {
+  return {
+    ssr: renderDocument(<ProfileDemo />, {manifest}),
+    stream: await streamResponse(<ProfileDemo />, {manifest}).text(),
+  };
+}
+`,
+  );
+  run(
+    app,
+    path.join(repo, 'node_modules/typescript/bin/tsc'),
+    '--ignoreConfig',
+    '--noEmit',
+    '--strict',
+    '--target',
+    'es2024',
+    '--module',
+    'esnext',
+    '--moduleResolution',
+    'bundler',
+    '--jsx',
+    'react-jsx',
+    '--jsxImportSource',
+    '@fierst/aster',
+    'src/types.tsx',
+  );
+  fs.appendFileSync(
+    path.join(app, 'src/main.tsx'),
+    "\nimport './Panel';\nimport './profile-editor';\n",
+  );
   run(app, vp, 'build');
   run(app, vp, 'build', '--ssr', 'src/server.tsx', '--outDir', 'dist-server');
   const dist = path.join(app, 'dist');
   const manifest = JSON.parse(fs.readFileSync(path.join(dist, 'aster-manifest.json'), 'utf8'));
-  const { page: renderPage, formDocuments } = await import(
-    pathToFileURL(path.join(app, 'dist-server/server.js')).href
-  );
+  const {
+    page: renderPage,
+    formDocuments,
+    editorDocuments,
+  } = await import(pathToFileURL(path.join(app, 'dist-server/server.js')).href);
   const html = renderPage(manifest);
   const nonce = 'Zm9ybS10ZXN0';
+  const editors = await editorDocuments(manifest);
   const forms = await formDocuments(manifest, nonce);
   assert.match(html, /data-aster-src="\/assets\/[^"]+#Panel"/);
   const astroPkg = JSON.parse(fs.readFileSync(bin('astro', 'package.json'), 'utf8'));
@@ -158,6 +206,7 @@ try {
       await serve(
         dist,
         async (origin) => {
+          await checkEditor(page, origin, editors, manifest);
           await checkForms(page, origin, forms, manifest['/src/Panel.tsx'], nonce);
           await page.goto(origin);
           await page.getByRole('button', { name: 'Clicks: 0' }).click();

@@ -1,5 +1,5 @@
 // Aster JSX-to-Slot Compiler
-// Shared slot emission and the browser playground's standalone JavaScript + JSX parser.
+// Shared slot emission for the build compiler and the playground.
 // Lowers:
 //   - Intrinsic JSX trees -> hoisted module-level `_tpl(html, bindings)` + `_slot(_tN, values, key)`
 //   - Component JSX (`<Counter {...props} start={10} />`) -> `_comp(Counter, { ...props, start: 10 }, key)`
@@ -84,17 +84,6 @@ const VOID_TAGS = new Set([
   'wbr',
 ]);
 
-function isEmptyOrCommentOnly(code: string): boolean {
-  const stripped = code
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/\/\/[^\n]*/g, '')
-    .trim();
-  return stripped.length === 0;
-}
-
-// =============================================================================
-// Minimal Zero-Dependency VLQ Encoder for V3 Source Maps
-// =============================================================================
 const VLQ_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 export function encodeVLQ(value: number): string {
@@ -107,33 +96,6 @@ export function encodeVLQ(value: number): string {
     out += VLQ_CHARS[digit];
   } while (v > 0);
   return out;
-}
-
-function buildLineSourceMap(
-  originalSource: string,
-  headerLineCount: number,
-  bodyLineToSourceLine: number[],
-  sourceFile: string,
-): SourceMapV3 {
-  const lines: string[] = [];
-  for (let i = 0; i < headerLineCount; i++) lines.push('');
-
-  let prevSrcLine = 0;
-  for (let i = 0; i < bodyLineToSourceLine.length; i++) {
-    const srcLine = bodyLineToSourceLine[i];
-    // Segment: [genCol=0, srcIdx=0, srcLineDelta, srcCol=0]
-    const seg = encodeVLQ(0) + encodeVLQ(0) + encodeVLQ(srcLine - prevSrcLine) + encodeVLQ(0);
-    prevSrcLine = srcLine;
-    lines.push(seg);
-  }
-
-  return {
-    version: 3,
-    sources: [sourceFile],
-    sourcesContent: [originalSource],
-    names: [],
-    mappings: lines.join(';'),
-  };
 }
 
 export class SlotEmitter {
@@ -303,7 +265,7 @@ export class SlotEmitter {
   lowerAttrExpr(name: string, expr: string, bindable?: boolean): string {
     if (name === 'bind:value' || name === 'bind:checked' || name === 'bind:open') {
       const trimmed = expr.trim();
-      if (bindable ?? /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])*$/.test(trimmed)) {
+      if (bindable) {
         const param = this.local('_v');
         return `[() => ${trimmed}, (${param}) => (${trimmed} = ${param})]`;
       }
@@ -312,430 +274,15 @@ export class SlotEmitter {
   }
 }
 
-class JSXLowerer extends SlotEmitter {
-  src: string;
-  pos = 0;
-  // Only JavaScript tokens outside literals, comments and JSX participate in export matching.
-  declarationSource = '';
-  /** Maps each output body line index -> 0-based line index in `this.src` */
-  lineMap: number[] = [0];
-  private srcLine = 0;
-
-  constructor(src: string) {
-    super(src);
-    this.src = src;
-  }
-
-  private advance(count = 1) {
-    for (let i = 0; i < count && this.pos < this.src.length; i++) {
-      if (this.src[this.pos] === '\n') this.srcLine++;
-      this.pos++;
-    }
-  }
-
-  private trackOut(chunk: string, sourceLineAtStart: number): string {
-    for (let i = 0; i < chunk.length; i++) {
-      if (chunk[i] === '\n') this.lineMap.push(sourceLineAtStart);
-    }
-    return chunk;
-  }
-
-  run(): string {
-    return this.scanJS(false);
-  }
-
-  scanJS(stopAtCloseBrace: boolean): string {
-    let out = '';
-    let braceDepth = 0;
-    const n = this.src.length;
-
-    while (this.pos < n) {
-      const ch = this.src[this.pos];
-
-      // Line comment
-      if (ch === '/' && this.src[this.pos + 1] === '/') {
-        if (!stopAtCloseBrace) this.declarationSource += ' ';
-        const startLine = this.srcLine;
-        const start = this.pos;
-        const end = this.src.indexOf('\n', this.pos);
-        const target = end === -1 ? n : end + 1;
-        const slice = this.src.slice(start, target);
-        this.advance(target - start);
-        out += this.trackOut(slice, startLine);
-        continue;
-      }
-
-      // Block comment
-      if (ch === '/' && this.src[this.pos + 1] === '*') {
-        if (!stopAtCloseBrace) this.declarationSource += ' ';
-        const start = this.pos;
-        const end = this.src.indexOf('*/', this.pos + 2);
-        const target = end === -1 ? n : end + 2;
-        for (let k = start; k < target; k++) {
-          const c = this.src[k];
-          out += c;
-          if (c === '\n') {
-            this.srcLine++;
-            this.lineMap.push(this.srcLine);
-          }
-          this.pos++;
-        }
-        continue;
-      }
-
-      // String literals
-      if (ch === '"' || ch === "'") {
-        if (!stopAtCloseBrace) this.declarationSource += '0';
-        const startLine = this.srcLine;
-        out += this.trackOut(this.readString(ch), startLine);
-        continue;
-      }
-
-      // Template literals
-      if (ch === '`') {
-        if (!stopAtCloseBrace) this.declarationSource += '0';
-        out += this.readTemplateLiteral();
-        continue;
-      }
-
-      // Regex literals
-      if (ch === '/' && this.isRegexStart(out)) {
-        if (!stopAtCloseBrace) this.declarationSource += '0';
-        const startLine = this.srcLine;
-        out += this.trackOut(this.readRegex(), startLine);
-        continue;
-      }
-
-      if (stopAtCloseBrace) {
-        if (ch === '{') braceDepth++;
-        else if (ch === '}') {
-          if (braceDepth === 0) {
-            this.advance(1);
-            return out;
-          }
-          braceDepth--;
-        }
-      }
-
-      // JSX opening tag `<Tag` or Fragment `<>`
-      if (ch === '<' && this.isJSXStart(out)) {
-        if (!stopAtCloseBrace) this.declarationSource += '0';
-        const startLine = this.srcLine;
-        const el = this.parseJSXElement();
-        out += this.trackOut(this.emitJSX(el), startLine);
-        continue;
-      }
-
-      out += ch;
-      if (!stopAtCloseBrace) this.declarationSource += ch;
-      if (ch === '\n') {
-        this.srcLine++;
-        this.lineMap.push(this.srcLine);
-      }
-      this.pos++;
-    }
-    return out;
-  }
-
-  isRegexStart(prevOut: string): boolean {
-    const trimmed = prevOut.trimEnd();
-    if (!trimmed) return true;
-    const last = trimmed[trimmed.length - 1];
-    if ('([{?:,=!&|;+-*%~^'.includes(last)) return true;
-    if (/\b(?:return|yield|case|throw|in|of|typeof|void|delete|new)$/.test(trimmed)) return true;
-    return false;
-  }
-
-  readRegex(): string {
-    let s = '/';
-    this.advance(1);
-    let inClass = false;
-    while (this.pos < this.src.length) {
-      const ch = this.src[this.pos];
-      this.advance(1);
-      s += ch;
-      if (ch === '\\' && this.pos < this.src.length) {
-        s += this.src[this.pos];
-        this.advance(1);
-      } else if (ch === '[') {
-        inClass = true;
-      } else if (ch === ']') {
-        inClass = false;
-      } else if (ch === '/' && !inClass) {
-        while (this.pos < this.src.length && /[a-z]/i.test(this.src[this.pos])) {
-          s += this.src[this.pos];
-          this.advance(1);
-        }
-        break;
-      }
-    }
-    return s;
-  }
-
-  isJSXStart(prevOut: string): boolean {
-    const next = this.src[this.pos + 1] || '';
-    if (!(next === '>' || /[A-Za-z_]/.test(next))) return false;
-    const trimmed = prevOut.trimEnd();
-    if (!trimmed) return true;
-    const lastChar = trimmed[trimmed.length - 1];
-    if ('([{?:,=!&|;'.includes(lastChar)) return true;
-    if (trimmed.endsWith('=>')) return true;
-    if (/\b(?:return|yield|case|default)$/.test(trimmed)) return true;
-    return false;
-  }
-
-  readString(q: string): string {
-    let s = q;
-    this.advance(1);
-    while (this.pos < this.src.length) {
-      const ch = this.src[this.pos];
-      this.advance(1);
-      s += ch;
-      if (ch === '\\' && this.pos < this.src.length) {
-        s += this.src[this.pos];
-        this.advance(1);
-      } else if (ch === q) {
-        break;
-      }
-    }
-    return s;
-  }
-
-  readTemplateLiteral(): string {
-    let s = '`';
-    this.advance(1);
-    while (this.pos < this.src.length) {
-      const ch = this.src[this.pos];
-      this.advance(1);
-      if (ch === '\\' && this.pos < this.src.length) {
-        const next = this.src[this.pos];
-        this.advance(1);
-        s += ch + next;
-        if (next === '\n') this.lineMap.push(this.srcLine);
-      } else if (ch === '$' && this.src[this.pos] === '{') {
-        this.advance(1);
-        s += '${' + this.scanJS(true) + '}';
-      } else if (ch === '`') {
-        s += '`';
-        break;
-      } else {
-        s += ch;
-        if (ch === '\n') this.lineMap.push(this.srcLine);
-      }
-    }
-    return s;
-  }
-
-  skipWS() {
-    while (this.pos < this.src.length && /\s/.test(this.src[this.pos])) this.advance(1);
-  }
-
-  parseJSXElement(): JSXEl {
-    this.advance(1); // consume '<'
-    if (this.src[this.pos] === '>') {
-      this.advance(1);
-      const children = this.parseJSXChildren('');
-      return { kind: 'el', tag: '', attrs: [], children };
-    }
-
-    let tag = '';
-    while (this.pos < this.src.length && /[A-Za-z0-9_.:$-]/.test(this.src[this.pos])) {
-      tag += this.src[this.pos];
-      this.advance(1);
-    }
-
-    const attrs: JSXAttr[] = [];
-    while (this.pos < this.src.length) {
-      this.skipWS();
-      if (this.src[this.pos] === '/' && this.src[this.pos + 1] === '>') {
-        this.advance(2);
-        return { kind: 'el', tag, attrs, children: [] };
-      }
-      if (this.src[this.pos] === '>') {
-        this.advance(1);
-        break;
-      }
-      // Spread attribute `{...expr}` or tag-level JSX comment `{/* ... */}`
-      if (this.src[this.pos] === '{') {
-        this.advance(1);
-        const code = this.scanJS(true).trim();
-        if (code.startsWith('...')) {
-          attrs.push({ name: '...', value: code.slice(3).trim(), isExpr: true, isSpread: true });
-        }
-        // Else if comment-only (`{/* ... */}`), silently skip
-        continue;
-      }
-
-      let name = '';
-      while (this.pos < this.src.length && /[A-Za-z0-9_:.-]/.test(this.src[this.pos])) {
-        name += this.src[this.pos];
-        this.advance(1);
-      }
-      this.skipWS();
-      if (this.src[this.pos] === '=') {
-        this.advance(1);
-        this.skipWS();
-        if (this.src[this.pos] === '"' || this.src[this.pos] === "'") {
-          const q = this.src[this.pos];
-          const str = this.readString(q);
-          attrs.push({ name, value: str.slice(1, -1), isExpr: false });
-        } else if (this.src[this.pos] === '{') {
-          this.advance(1);
-          const code = this.scanJS(true).trim();
-          attrs.push({ name, value: code, isExpr: true });
-        }
-      } else if (name) {
-        attrs.push({ name, value: null, isExpr: false });
-      } else {
-        this.advance(1);
-      }
-    }
-
-    if (VOID_TAGS.has(tag)) {
-      return { kind: 'el', tag, attrs, children: [] };
-    }
-    const children = this.parseJSXChildren(tag);
-    return { kind: 'el', tag, attrs, children };
-  }
-
-  private pushText(children: JSXChild[], text: string) {
-    const prev = children[children.length - 1];
-    if (prev && prev.kind === 'text') {
-      prev.text += text;
-    } else {
-      children.push({ kind: 'text', text });
-    }
-  }
-
-  parseJSXChildren(closingTag: string): JSXChild[] {
-    const children: JSXChild[] = [];
-    const closeMarker = `</${closingTag}>`;
-
-    while (this.pos < this.src.length) {
-      if (this.src.startsWith(closeMarker, this.pos)) {
-        this.advance(closeMarker.length);
-        break;
-      }
-      if (this.src[this.pos] === '<' && this.src[this.pos + 1] === '/') {
-        const end = this.src.indexOf('>', this.pos + 2);
-        if (end !== -1) {
-          this.advance(end + 1 - this.pos);
-          break;
-        }
-      }
-
-      if (this.src[this.pos] === '{') {
-        this.advance(1);
-        const code = this.scanJS(true).trim();
-        // Strip JSX comments `{/* ... */}` cleanly without creating empty slots!
-        if (code && !isEmptyOrCommentOnly(code)) {
-          children.push({ kind: 'expr', code });
-        }
-        continue;
-      }
-
-      if (
-        this.src[this.pos] === '<' &&
-        (this.src[this.pos + 1] === '>' || /[A-Za-z_]/.test(this.src[this.pos + 1] || ''))
-      ) {
-        children.push(this.parseJSXElement());
-        continue;
-      }
-
-      let text = '';
-      if (this.src[this.pos] === '<') throw new SyntaxError('Unexpected < in JSX children');
-      while (
-        this.pos < this.src.length &&
-        this.src[this.pos] !== '<' &&
-        this.src[this.pos] !== '{'
-      ) {
-        text += this.src[this.pos];
-        this.advance(1);
-      }
-      const cleaned = this.cleanJsxText(text);
-      if (cleaned !== '') {
-        this.pushText(children, cleaned);
-      }
-    }
-    return children;
-  }
-}
-
-function collectExportedComponents(jsBody: string) {
-  const generators: { name: string; exportKey: string }[] = [];
-  const stateless: { name: string; exportKey: string }[] = [];
-  const seen = new Set<string>();
-
-  // 1. Function declaration generators: `export [default] [async] function* Name`
-  const genDeclRe = /\bexport\s+(?:default\s+)?(?:async\s+)?function\s*\*\s*([A-Za-z_$][\w$]*)/g;
-  let m: RegExpExecArray | null;
-  while ((m = genDeclRe.exec(jsBody)) !== null) {
-    const name = m[1];
-    if (seen.has(name)) continue;
-    seen.add(name);
-    generators.push({ name, exportKey: /\bexport\s+default\b/.test(m[0]) ? 'default' : name });
-  }
-
-  // 2. Variable expression generators: `export const Name = [async] function* (...)`
-  const genExprRe =
-    /\bexport\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function\s*\*/g;
-  while ((m = genExprRe.exec(jsBody)) !== null) {
-    const name = m[1];
-    if (seen.has(name)) continue;
-    seen.add(name);
-    generators.push({ name, exportKey: name });
-  }
-
-  // 3. Exported PascalCase stateless functions (declarations & arrows) — eligible for HMR, NOT Lazy Revival
-  const callbacks: typeof stateless = [];
-  const fnRe = /\bexport\s+(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/g;
-  while ((m = fnRe.exec(jsBody)) !== null) {
-    const name = m[1];
-    if (seen.has(name)) continue;
-    seen.add(name);
-    const exports = /^[A-Z]/.test(name) ? stateless : callbacks;
-    exports.push({ name, exportKey: /\bexport\s+default\b/.test(m[0]) ? 'default' : name });
-  }
-
-  const arrowRe =
-    /\bexport\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/g;
-  while ((m = arrowRe.exec(jsBody)) !== null) {
-    const name = m[1];
-    if (seen.has(name)) continue;
-    seen.add(name);
-    const exports = /^[A-Z]/.test(name) ? stateless : callbacks;
-    exports.push({ name, exportKey: name });
-  }
-
-  return { generators, stateless, callbacks };
-}
-
-/**
- * Standalone JS + JSX compiler for the in-browser editor.
- */
-export function compileModule(source: string, options: CompileOptions = {}): CompileResult {
-  const lowerer = new JSXLowerer(source);
-  const body = lowerer.run();
-  const { headerLineCount, ...module } = emitModule(
-    options,
-    lowerer,
-    body,
-    collectExportedComponents(lowerer.declarationSource),
-  );
-  const map = buildLineSourceMap(
-    source,
-    headerLineCount,
-    lowerer.lineMap,
-    options.sourceFile ?? options.moduleUrl ?? 'input.tsx',
-  );
-  return { ...module, map };
-}
-
 export function emitModule(
   options: CompileOptions,
   lowerer: SlotEmitter,
   body: string,
-  { generators, stateless, callbacks }: ReturnType<typeof collectExportedComponents>,
+  {
+    generators,
+    stateless,
+    callbacks,
+  }: Record<'generators' | 'stateless' | 'callbacks', { name: string; exportKey: string }[]>,
   isEntry = /\brender\s*\(/.test(body),
 ) {
   const runtimeImport = options.runtimeImport ?? '@fierst/aster';
@@ -783,20 +330,13 @@ export function emitModule(
   }
 
   const headerStr = header.length > 0 ? header.join('\n') + '\n\n' : '';
-  const headerLineCount = headerStr ? headerStr.split('\n').length - 1 : 0;
   const footerStr = footer.length > 0 ? '\n\n' + footer.join('\n') : '';
   const code = headerStr + body + footerStr;
 
   return {
     code,
-    headerLineCount,
     exportedGenerators: generators.map((g) => g.name),
     exportedCallbacks: callbacks.map((c) => c.name),
     exportedStateless: stateless.map((s) => s.name),
   };
-}
-
-/** Convenience wrapper returning compiled JS string. */
-export function compileJSX(source: string, options: CompileOptions = {}): string {
-  return compileModule(source, options).code;
 }

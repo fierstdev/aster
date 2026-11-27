@@ -70,6 +70,7 @@ export async function check(
   const dryCtx = {
     signal: ac.signal,
     refresh() {},
+    afterRender() {},
     onCleanup(callback: () => void) {
       ac.signal.addEventListener('abort', callback, { once: true });
     },

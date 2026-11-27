@@ -14,7 +14,9 @@ import {
   html,
   render,
 } from '@fierst/aster';
-import { compileJSX } from '../src/compiler.ts';
+import { compileJSX } from './compiler.ts';
+import { parseModule } from 'meriyah';
+import { SlotEmitter } from '../src/compiler.ts';
 
 export interface SandboxCompileOutput {
   compiled: string;
@@ -38,36 +40,66 @@ const RUNTIME_SCOPE = {
   render,
 };
 
-/**
- * Compile user JS+JSX from the `/learn` editor into both displayable compiled ESM
- * and a sandbox-executable function body.
- */
-export function compileSandboxCode(source: string): SandboxCompileOutput {
-  const compiled = compileJSX(source, {
+/** Compile the editor source for display without running it. */
+export function compileLesson(source: string): string {
+  return compileJSX(source, {
     runtimeImport: '@fierst/aster',
     moduleUrl: '/learn/App.jsx',
   });
+}
 
-  // Strip ESM `import ... from '@fierst/aster'` lines (injected via RUNTIME_SCOPE)
-  // and `export` keywords so the snippet runs cleanly inside `new Function`.
-  const aliases: string[] = [];
-  const body =
-    compiled
-      .replace(
-        /^\s*import\s*\{([^}]+)\}\s*from\s+['"]@fierst\/aster['"];?\s*$/gm,
-        (_, names: string) => {
-          for (const spec of names.split(',')) {
-            const [name, local] = spec.trim().split(/\s+as\s+/);
-            if (local) aliases.push(`const ${local} = ${name};`);
-          }
-          return '';
-        },
-      )
-      .replace(/\bexport\s+default\s+/g, '')
-      .replace(/\bexport\s+(?=(?:async\s+)?function|const|let|var)/g, '') +
-    '\nreturn typeof App === "function" ? App : null;\n';
-
-  return { compiled, executableBody: aliases.join('\n') + '\n{\n' + body + '}' };
+export function compileSandboxCode(source: string): SandboxCompileOutput {
+  const compiled = compileLesson(source);
+  const imports: string[] = [];
+  const body: string[] = [];
+  let entry = 'App';
+  const keys = Object.keys(RUNTIME_SCOPE);
+  // Adapt only top-level module declarations. Strings, templates, and component bodies
+  // must execute exactly as they appear in the Compiled Slots pane.
+  for (const stmt of parseModule(compiled, { ranges: true, preserveParens: true }).body) {
+    if (stmt.type === 'ImportDeclaration') {
+      if (stmt.source.value !== '@fierst/aster')
+        throw new SyntaxError('The lesson preview supports imports from @fierst/aster only.');
+      for (const spec of stmt.specifiers) {
+        if (spec.type !== 'ImportSpecifier')
+          throw new SyntaxError('Use named Aster imports in the lesson preview.');
+        const name = spec.imported.type === 'Identifier' ? spec.imported.name : spec.imported.value;
+        const index = keys.indexOf(name);
+        if (index === -1)
+          throw new SyntaxError(`The lesson preview does not provide the Aster export "${name}".`);
+        imports.push(`const ${spec.local.name} = arguments[${index}];`);
+      }
+    } else if (stmt.type === 'ExportDefaultDeclaration') {
+      const decl = stmt.declaration;
+      const text = compiled.slice(decl.start, decl.end);
+      if ((decl.type === 'FunctionDeclaration' || decl.type === 'ClassDeclaration') && decl.id) {
+        entry = decl.id.name;
+        body.push(text);
+      } else {
+        entry = new SlotEmitter(compiled).local('_default');
+        body.push(`const ${entry} = (${text});`);
+      }
+    } else if (stmt.type === 'ExportNamedDeclaration' && !stmt.source) {
+      if (stmt.declaration) body.push(compiled.slice(stmt.declaration.start, stmt.declaration.end));
+      for (const spec of stmt.specifiers) {
+        const exported =
+          spec.exported.type === 'Identifier' ? spec.exported.name : spec.exported.value;
+        if (exported === 'default' && spec.local.type === 'Identifier') entry = spec.local.name;
+      }
+    } else if (stmt.type === 'ExportAllDeclaration' || stmt.type === 'ExportNamedDeclaration') {
+      throw new SyntaxError('The lesson preview cannot load re-exports from other modules.');
+    } else body.push(compiled.slice(stmt.start, stmt.end));
+  }
+  return {
+    compiled,
+    executableBody: [
+      '{',
+      ...imports,
+      body.join('\n;\n'),
+      `return typeof ${entry} === 'function' ? ${entry} : null;`,
+      '}',
+    ].join('\n'),
+  };
 }
 
 export interface SandboxMountResult {
@@ -92,7 +124,7 @@ export function mountSandbox(source: string, container: HTMLElement): SandboxMou
       return {
         dispose: () => {},
         compiled,
-        error: 'Define a `function* App()` (or `function App()`) component to preview.',
+        error: 'Define an App component or export a component as default to preview it.',
       };
     }
 

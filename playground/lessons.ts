@@ -10,6 +10,64 @@ export interface Lesson {
   readonly solution: string;
 }
 
+const executionLesson = `const history = signal([]);
+const record = message => history.update(lines => [...lines, message]);
+let finishRequest;
+
+function Trace() {
+  return <ol aria-label="Execution trace">{history().map((line, i) => <li key={i}>{line}</li>)}</ol>;
+}
+
+function* confirmation() {
+  let accepted = false;
+  try {
+    while (!accepted) {
+      record('Confirmation: next');
+      yield <button onClick={() => { accepted = true; }}>Confirm</button>;
+    }
+    return true;
+  } finally {
+    record('Confirmation: finally');
+  }
+}
+
+function* Workflow() {
+  try {
+    const accepted = yield* confirmation();
+    if (accepted) yield <p>Confirmed</p>;
+  } finally {
+    record('Workflow: finally');
+  }
+}
+
+async function* Request({ id }, ctx) {
+  record('Request ' + id + ': next, yield loading');
+  yield <p>Loading request {id}</p>;
+  record('Request ' + id + ': next, waiting');
+  await new Promise(resolve => {
+    const abort = () => { record('Request ' + id + ': aborted'); resolve(); };
+    if (ctx.signal.aborted) { abort(); return; }
+    ctx.signal.addEventListener('abort', abort, { once: true });
+    finishRequest = () => {
+      ctx.signal.removeEventListener('abort', abort);
+      resolve();
+    };
+  });
+  if (!ctx.signal.aborted) yield <p>Loaded request {id}</p>;
+}
+
+function* App() {
+  let id = 1, open = true;
+  for (;;) yield <section>
+    <button onClick={() => id++}>Change request</button>
+    <button onClick={() => finishRequest?.()}>Finish request</button>
+    <button onClick={() => { open = !open; }}>{open ? 'Leave workflow' : 'Open workflow'}</button>
+    <Request id={id}/>
+    {open && <Workflow/>}
+    <Trace/>
+  </section>;
+}`;
+
 export const LESSONS: readonly Lesson[] = [
   {
     id: 'plain-let-state',
@@ -499,5 +557,22 @@ function* App() {
     );
   }
 }`,
+  },
+  {
+    id: 'generator-execution',
+    number: 7,
+    title: 'Who advances the generator?',
+    subtitle: 'Follow two components in the execution trace.',
+    concept: 'next(), yield*, and finally',
+    explanation: [
+      'The confirmation pauses at yield until an update advances it. The async request advances past its loading view automatically, then pauses at await until you finish or replace it.',
+      'Change the request before finishing it to see the old signal abort. Leave the workflow while Confirm is visible to see the delegated step clean up before its caller.',
+    ],
+    task: 'Add a trace entry after the request finishes so you can tell a completed request from an aborted one.',
+    starter: executionLesson,
+    solution: executionLesson.replace(
+      'if (!ctx.signal.aborted) yield <p>Loaded request {id}</p>;',
+      "if (!ctx.signal.aborted) {\n    record('Request ' + id + ': completed');\n    yield <p>Loaded request {id}</p>;\n  }",
+    ),
   },
 ];

@@ -4,6 +4,24 @@ All notable changes to **Aster** are documented in this file. The format follows
 
 ---
 
+## [1.2.0] - 2026-11-27
+
+When upgrading, check two-way bindings and native JSX handler names against the stricter diagnostics. Async components now restart when a function prop changes identity. Define callbacks before the parent generator's render loop when an unrelated update should preserve a pending request.
+
+- Preserve grouped JSX expressions and module-like text in playground previews. Support default-exported lesson components and diagnose unavailable imports.
+- Route binding setter failures through the owning error boundary. Infer native event types for `on:*` handlers and SVG listeners.
+
+- Add `ctx.afterRender(callback)` for one-time DOM work after a component mounts, updates, or claims its server HTML. The playground uses it to open dialogs, restore focus, and mount live previews.
+- Refresh the learning editor's Compiled Slots tab as you type and show compiler diagnostics in the tab. Recover from mismatched server slot markers without duplicating text.
+
+- Detach spread form bindings without clearing the field. Restart async generators when a function prop changes and preserve stable event callbacks across parent renders.
+- Await registered cleanup during async SSR and report late failures during synchronous rendering or stream cancellation.
+- Identify missing DOM paths during development claims and add an interactive generator execution trace to lesson 7.
+
+- Report invalid two-way bindings at their JSX location in Vite and the learning editor. Support direct const signal bindings.
+- Route thrown and rejected DOM event handlers to their component error boundary. Ignore late event completions after disposal.
+- Infer DOM element types for JSX event targets and refs, validate native event names and bindings, and demonstrate delegated confirmation, cancellation, and retry in the playground showcase.
+
 ## [1.1.0] - 2026-11-27
 
 - Preserve local bindings and public export aliases during slot compilation and revival. Match form attribute precedence across client mounts and SSR, preserve native submission through lazy activation, and wake keyboard-driven islands on the first keydown.

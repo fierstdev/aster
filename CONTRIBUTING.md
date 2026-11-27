@@ -35,7 +35,7 @@ vp build                 # Build playground + aster-manifest.json
 ## Repository Map
 
 - `src/runtime.ts` — Core generator runner (`function*` / `async function*`), slot patching, LIS keyed lists, `signal()`, Context, `<ErrorBoundary>`, `defineElement()`, `css`/`scope`, HMR registry.
-- `src/compiler-oxc.ts` parses build-time JSX and TSX. It shares the slot emitter in `src/compiler.ts` with the browser editor. `src/compiler-map.ts` maps emitted expressions back to the input.
+- `src/compiler-oxc.ts` parses build-time JSX and TSX. The learning editor uses Meriyah for JavaScript and JSX. Both parsers feed `src/compiler-ast.ts` and the slot emitter in `src/compiler.ts`. `src/compiler-map.ts` maps emitted expressions back to the input.
 - `src/vite.ts` — Vite+ / Rolldown plugin (`oxc: { jsx: 'preserve' }`, HMR, production `aster-manifest.json`).
 - `src/ssr.ts` — Sync, async (`renderToStringAsync`), and out-of-order streaming (`renderToStream`) SSR.
 - `src/revive.ts` — Event-Delegated Lazy Revival client loader.

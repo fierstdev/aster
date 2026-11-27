@@ -77,6 +77,8 @@ For a hand-built client or a standard Vite manifest without those entries, pass 
 
 SSR route hooks read the nearest router's URL and parameters. Async components on Node can read context across an `await`. On runtimes without `AsyncLocalStorage`, capture context before the first `await` or use the route props. Components can register resource cleanup using `ctx.onCleanup()` on both server and client. Stream consumers can cancel the reader to signal pending generators through `ctx.signal`.
 
+Async SSR awaits promises returned by registered cleanup callbacks. If cleanup fails, the render promise or active stream surfaces an `AggregateError`. Synchronous SSR logs late cleanup rejections, and a canceled stream logs cleanup failures after its reader has gone away.
+
 Each client generator execution has its own `ctx.signal`. After a prop restart or unmount, that execution continues to see its aborted signal, including after an `await`. A cleanup registered on an already aborted context runs immediately. Client teardown reports cleanup failures to the console and continues disposing the component.
 
 Island props support plain data, arrays, dates, query parameters, JSX templates, and exported child components. A named callback exported from a compiled client module travels as a module reference. A callback that closes over component locals is recreated by running its owning client component. Include those modules in the client build. Routed islands also restore their matched URL and parameters.

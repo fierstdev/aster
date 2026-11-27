@@ -15,6 +15,7 @@
 9. **Lazy Revival is 100% automatic:** NEVER wrap components in `island()` or `$` syntax. Any `export function*` is automatically stamped with `__asterSrc` by `@fierst/aster/vite`.
 10. **Routing uses plain `<a href="/...">` tags:** NEVER import or invent a `<Link>` component. `<Router>` intercepts same-origin links natively via the browser Navigation API + `URLPattern` + View Transitions.
 11. **External push updates need `ctx.refresh()`:** Event handlers (`onClick`, `onSubmit`, `bind:*`, and child `on*` callbacks) auto-refresh; external timers (`setInterval`, `WebSocket`) call `ctx.refresh()`.
+    For focus or native dialogs, use `ref={el => ctx.afterRender(() => el.focus())}`. The callback runs once after the owning component's next successful client DOM patch. Registration does not schedule a render. SSR skips it.
 12. **Native 2026 HTML controls are built-in:** Use `<dialog closedby="any">`, `popover`, `popovertarget`, `commandfor`, `command`, `scope` (`@scope`), and `css` (`CSSStyleSheet`).
 
 ## Core API Quick Reference
@@ -81,7 +82,7 @@ export function* TodoList() {
 
 ### Composable Multi-Step UI Flows (`yield*`)
 ```tsx
-function* confirmDelete(title: string): Generator<any, boolean, any> {
+function* confirmDelete(title: string) {
   let choice: boolean | null = null;
   while (choice === null) {
     yield (
@@ -95,6 +96,8 @@ function* confirmDelete(title: string): Generator<any, boolean, any> {
   return choice;
 }
 ```
+
+Use synchronous generators for interactive delegated steps. Async generators automatically advance after each yield and should produce finite sequences. Pass a const signal directly to `bind:value`, or supply a mutable local or `[get, set]` pair. Return promises from event handlers for error boundary handling.
 
 ### Async Components (`async function*`) & Cancellation
 ```tsx

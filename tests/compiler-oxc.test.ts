@@ -2,11 +2,39 @@ import { SourceMap } from 'node:module';
 import { createServer } from 'vite-plus';
 import { describe, expect, it } from 'vite-plus/test';
 import { compileModule } from '../src/compiler-oxc.ts';
-import { compileJSX } from '../src/compiler.ts';
+import { compileJSX } from '../playground/compiler.ts';
 import { LESSONS } from '../playground/lessons.ts';
 import aster from '../src/vite.ts';
 
 describe('Oxc build compiler', () => {
+  it('preserves parenthesized sequences as one slot in both compilers', () => {
+    const source = 'function App(){return <div title={(1,2)}>{(3,4)}</div>}';
+    expect(compileJSX(source)).toBe(compileModule(source).code);
+    expect(compileJSX(source)).toContain('[(1,2), (3,4)]');
+  });
+  for (const [parser, compile] of Object.entries({
+    build: (source: string) => compileModule(source, { sourceFile: 'Panel.tsx' }).code,
+    editor: (source: string) => compileJSX(source, { sourceFile: 'Panel.tsx' }),
+  })) {
+    it(parser + ' locates invalid bindings and respects lexical shadowing', () => {
+      for (const expr of ['draft', '42', 'true', '1 + 2']) {
+        expect(() => compile('const draft = "Ada";\n<input bind:value={' + expr + '}/>')).toThrow(
+          /Panel\.tsx:2:20: bind:value needs a writable/,
+        );
+      }
+      const output = compile(
+        'const draft = "Ada"; function Field({draft}){return <input bind:value={draft}/>;}',
+      );
+      expect(output).toContain('draft = _v');
+      expect(
+        compile('const draft = signal(""); const v = <input bind:value={draft}/>'),
+      ).not.toContain('draft = _v');
+      expect(
+        compile('const draft = signal(""); const v = <input bind:value={[draft, draft.set]}/>'),
+      ).toContain('[draft, draft.set]');
+      expect(compile('const v = <input bind:value={makeAccessor()}/>')).toContain('makeAccessor()');
+    });
+  }
   it('reserves user names in nested scopes, template hoists and two-way setters', () => {
     const source = 'const _t1=1; export const Field = (_slot, _v) => <input bind:value={_v} />;';
     for (const code of [compileJSX(source), compileModule(source).code]) {

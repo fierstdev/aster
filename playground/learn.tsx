@@ -1,6 +1,6 @@
 import { type Ctx } from '@fierst/aster';
 import { LESSONS } from './lessons.ts';
-import { mountSandbox } from './sandbox.ts';
+import { compileLesson, mountSandbox } from './sandbox.ts';
 
 export function* LearnView(_props: Record<string, any>, ctx: Ctx) {
   let activeIndex = 0;
@@ -11,7 +11,17 @@ export function* LearnView(_props: Record<string, any>, ctx: Ctx) {
   let previewEl: HTMLDivElement | null = null;
   let disposePreview = null as (() => void) | null;
 
-  const runPreview = () => {
+  const updateOutput = () => {
+    if (rightTab === 'compiled') {
+      try {
+        compiledOutput = compileLesson(code);
+        runtimeError = null;
+      } catch (error) {
+        compiledOutput = '';
+        runtimeError = error instanceof Error ? error.message : String(error);
+      }
+      return;
+    }
     if (!previewEl) return;
     disposePreview?.();
     disposePreview = null;
@@ -25,22 +35,17 @@ export function* LearnView(_props: Record<string, any>, ctx: Ctx) {
     activeIndex = idx;
     code = LESSONS[idx].starter;
     rightTab = 'preview';
-    runPreview();
+    updateOutput();
   };
 
   const showSolution = () => {
     code = LESSONS[activeIndex].solution;
-    runPreview();
+    updateOutput();
   };
 
   const resetLesson = () => {
     code = LESSONS[activeIndex].starter;
-    runPreview();
-  };
-
-  const onCodeInput = (e: Event) => {
-    code = (e.target as HTMLTextAreaElement).value;
-    runPreview();
+    updateOutput();
   };
 
   try {
@@ -129,6 +134,7 @@ export function* LearnView(_props: Record<string, any>, ctx: Ctx) {
                     disposePreview = null;
                     previewEl = null;
                     rightTab = 'compiled';
+                    updateOutput();
                   }}
                 >
                   Compiled Slots
@@ -136,7 +142,15 @@ export function* LearnView(_props: Record<string, any>, ctx: Ctx) {
               </div>
             </div>
 
-            <textarea class="code-editor" spellcheck="false" value={code} onInput={onCodeInput} />
+            <textarea
+              class="code-editor"
+              spellcheck="false"
+              value={code}
+              onInput={(event) => {
+                code = event.currentTarget.value;
+                updateOutput();
+              }}
+            />
 
             {rightTab === 'preview' ? (
               <div class="preview-panel">
@@ -151,10 +165,12 @@ export function* LearnView(_props: Record<string, any>, ctx: Ctx) {
                 {runtimeError ? <pre class="error-pre">{runtimeError}</pre> : null}
                 <div
                   class="preview-stage"
-                  ref={(el: HTMLDivElement) => {
+                  ref={(el) => {
                     previewEl = el;
-                    runPreview();
-                    ctx.refresh();
+                    ctx.afterRender(() => {
+                      updateOutput();
+                      ctx.refresh();
+                    });
                   }}
                 />
               </div>
@@ -164,7 +180,13 @@ export function* LearnView(_props: Record<string, any>, ctx: Ctx) {
                   <span class="mono-label">Hoisted _tpl() / _slot() Output</span>
                   <span class="pill">Zero VDOM</span>
                 </div>
-                <pre class="code">{compiledOutput}</pre>
+                {runtimeError ? (
+                  <pre role="alert" class="error-pre">
+                    {runtimeError}
+                  </pre>
+                ) : (
+                  <pre class="code">{compiledOutput}</pre>
+                )}
               </div>
             )}
           </section>

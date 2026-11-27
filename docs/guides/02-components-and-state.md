@@ -86,6 +86,12 @@ export function* SearchBox() {
 
 ---
 
+Use a mutable local, a writable property, a signal held in a `const` or import, or an explicit `[get, set]` pair. For example, `const query = signal('')` works with `bind:value={query}`. Calling `query()` there supplies only its current value. Both compilers flag a known scalar at its JSX source location. A factory returning a binding is checked during server rendering or when the control mounts.
+
+DOM handlers and custom binding setters can throw or return a rejecting promise. Aster forwards that failure to the nearest error boundary around the component that rendered the listener, or logs the event or binding name when there is no boundary. Return or await asynchronous callbacks to keep their errors in the event chain.
+
+Use `on:keydown={event => event.key === 'Escape' && event.currentTarget.blur()}` for a native keyboard event. TypeScript infers both the event and the element. For application-defined events, augment the DOM interface `GlobalEventHandlersEventMap` with the event name and its `CustomEvent<Detail>` type to infer `event.detail` in JSX.
+
 ## 4. Shared Cross-Component State (`signal()`)
 
 When multiple components (including Web Components) need to stay in sync, create a `signal()` in a shared module. Reading `step()` inside any `function*` automatically subscribes that generator:
@@ -170,4 +176,8 @@ export function App({ user }: { user: { name: string } }) {
 
 ### Automatic `async function*` Prop Restarts
 
-When an `async function*` component receives new props (e.g. `<UserProfile id={selectedId} />`), Aster automatically aborts its previous `ctx.signal`, runs its `finally` block, and restarts with the updated props—while skipping restarts when parent re-renders pass identical props.
+Aster compares each prop with `Object.is`. Changing `id` in `<UserProfile id={selectedId} />` aborts the previous execution and starts a new one. Pass `ctx.signal` to the pending operation so it can settle and let the old generator reach its `finally` block.
+
+Function props participate in this comparison. If a parent passes `load={loadProfile}`, replacing the loader restarts the child. Declare callbacks before the parent generator's render loop when they should keep the same identity across updates. An inline arrow inside the loop creates a fresh function on every render.
+
+In lesson 7 on `/learn`, change a request while it is waiting, then leave a delegated confirmation. The execution trace shows the abort and the order of the two `finally` blocks.

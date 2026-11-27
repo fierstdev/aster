@@ -17,6 +17,7 @@ import { renderToString, renderToStream } from '@fierst/aster/ssr';
 import { installRevival } from '@fierst/aster/revive';
 import { LESSONS } from '../../playground/lessons.ts';
 import { mountSandbox } from '../../playground/sandbox.ts';
+import { LearnView } from '../../playground/learn.tsx';
 import astroServer from '../../src/astro/server.ts';
 import hydrateAster from '../../src/astro/client.ts';
 
@@ -38,6 +39,458 @@ afterEach(() => {
 });
 
 describe('Aster Real-Browser DOM Runtime', () => {
+  it('previews default exports, preserves module-like text, and respects import aliases', () => {
+    for (const declaration of [
+      'export default function* Screen(){yield text()}',
+      'export default () => text()',
+      'function Screen(){return text()} export {Screen as default}',
+    ]) {
+      const preview = mountSandbox(
+        `
+        import { signal as render } from '@fierst/aster'
+        const text = render("export default function App()")
+        ${declaration}
+      `,
+        root,
+      );
+      try {
+        expect(preview.error).toBeNull();
+        expect(root.textContent).toBe('export default function App()');
+      } finally {
+        preview.dispose();
+      }
+    }
+    expect(mountSandbox("import {Widget} from './Widget.js';", root).error).toMatch(
+      /imports from @fierst\/aster/,
+    );
+  });
+
+  it.each(['throw', 'reject'])(
+    'routes a binding setter that can %s to its error boundary',
+    async (mode) => {
+      const error = new Error('Invalid edit');
+      const caught = vi.fn();
+      function Field() {
+        const set = () => {
+          if (mode === 'throw') throw error;
+          return Promise.reject(error);
+        };
+        return <input bind:value={[() => 'initial', set]} />;
+      }
+      dispose = render(
+        <ErrorBoundary onError={caught} fallback={() => 'Edit failed'}>
+          <Field />
+        </ErrorBoundary>,
+        root,
+      );
+      root.querySelector('input')!.dispatchEvent(new Event('input'));
+      await vi.waitFor(() => expect(root.textContent).toBe('Edit failed'));
+      expect(caught.mock.calls).toEqual([[error]]);
+    },
+  );
+  it.each(['mount', 'claim'])(
+    'runs one-shot DOM work after all component bindings on %s',
+    async (mode) => {
+      const order: string[] = [];
+      const unrelated = signal(0);
+      let renders = 0;
+      function* Page(_: {}, ctx: Ctx) {
+        let count = 0;
+        ctx.afterRender(() => {
+          unrelated();
+          order.push(root.querySelector('output')!.textContent!);
+          ctx.afterRender(() => order.push('next patch'));
+        });
+        for (;;) {
+          renders++;
+          yield (
+            <div>
+              <button
+                ref={(button) => ctx.afterRender(() => button.focus())}
+                onClick={() => {
+                  count++;
+                  ctx.afterRender(() => order.push(root.querySelector('output')!.textContent!));
+                }}
+              >
+                Update
+              </button>
+              <output>{count}</output>
+            </div>
+          );
+        }
+      }
+      if (mode === 'claim') {
+        root.innerHTML = renderToString(<Page />, { revive: true, _inIsland: true });
+        renders = 0;
+        const original = root.querySelector('button');
+        const handle = claim(Page, {}, root);
+        dispose = () => handle.dispose();
+        expect(root.querySelector('button')).toBe(original);
+      } else dispose = render(<Page />, root);
+      expect(order).toEqual(['0']);
+      const button = root.querySelector('button')!;
+      expect(document.activeElement).toBe(button);
+      unrelated.set(1);
+      await flush();
+      expect(renders).toBe(1);
+      button.click();
+      await flush();
+      expect(order).toEqual(['0', 'next patch', '1']);
+    },
+  );
+
+  it('discards post-render work from restarted and unmounted async executions', async () => {
+    const id = signal(1),
+      seen: number[] = [],
+      release: (() => void)[] = [];
+    async function* Child({ value }: { value: number }, ctx: Ctx) {
+      yield 'loading';
+      ctx.afterRender(() => seen.push(value));
+      await new Promise<void>((resolve) => release.push(resolve));
+      ctx.afterRender(() => seen.push(value * 10));
+      yield <p>{value}</p>;
+    }
+    function Host() {
+      return <Child value={id()} />;
+    }
+    dispose = render(<Host />, root);
+    await vi.waitFor(() => expect(release).toHaveLength(1));
+    id.set(2);
+    await vi.waitFor(() => expect(release).toHaveLength(2));
+    release[0]();
+    release[1]();
+    await vi.waitFor(() => expect(seen).toEqual([2, 20]));
+    id.set(3);
+    await vi.waitFor(() => expect(release).toHaveLength(3));
+    dispose();
+    dispose = null;
+    release[2]();
+    await tick();
+    expect(seen).toEqual([2, 20]);
+  });
+
+  it.each(['patch', 'callback', 'promise'])(
+    'owns post-render work when a %s fails',
+    async (kind) => {
+      const error = new Error(kind),
+        ran = vi.fn(),
+        caught = vi.fn();
+      function Child(_: {}, ctx: Ctx) {
+        ctx.afterRender(() => {
+          ran();
+          if (kind === 'promise') return Promise.reject(error);
+          throw error;
+        });
+        return (
+          <p
+            ref={() => {
+              if (kind === 'patch') throw error;
+            }}
+          >
+            Child
+          </p>
+        );
+      }
+      dispose = render(
+        <ErrorBoundary onError={caught} fallback={() => 'Recovered'}>
+          <Child />
+        </ErrorBoundary>,
+        root,
+      );
+      await vi.waitFor(() => expect(root.textContent).toBe('Recovered'));
+      expect(caught.mock.calls).toEqual([[error]]);
+      expect(ran).toHaveBeenCalledTimes(kind === 'patch' ? 0 : 1);
+    },
+  );
+
+  it('updates compiled output and diagnostics while the learning preview is closed', async () => {
+    dispose = render(<LearnView />, root);
+    const click = (label: string) =>
+      Array.from(root.querySelectorAll('button'))
+        .find((b) => b.textContent.trim() === label)!
+        .click();
+    click('Compiled Slots');
+    await flush();
+    const editor = root.querySelector('textarea')!;
+    const edit = async (code: string) => {
+      editor.value = code;
+      editor.dispatchEvent(new Event('input'));
+      await flush();
+    };
+    await edit('function App(){throw Error("preview ran");return <p>Edited lesson</p>}');
+    expect(root.querySelector('pre.code')?.textContent).toContain('Edited lesson');
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+    await edit('function App(){return <input bind:value={42}/>}');
+    expect(root.querySelector('[role="alert"]')?.textContent).toContain('bind:value');
+    await edit('function App(){return <button>Working again</button>}');
+    click('Live Preview');
+    await flush();
+    expect(root.querySelector('.preview-stage button')?.textContent).toBe('Working again');
+  });
+  it('detaches and reattaches spread bindings without resetting native fields', async () => {
+    const bound = signal(true),
+      text = signal('before'),
+      checked = signal(true),
+      open = signal(true);
+    function Fields() {
+      return (
+        <section>
+          <input {...(bound() ? { 'bind:value': text } : {})} />
+          <input type="checkbox" {...(bound() ? { 'bind:checked': checked } : {})} />
+          <details {...(bound() ? { 'bind:open': open } : {})} />
+        </section>
+      );
+    }
+    dispose = render(<Fields />, root);
+    const [input, box] = root.querySelectorAll('input');
+    const details = root.querySelector('details')!;
+    bound.set(false);
+    await flush();
+    expect([input.value, box.checked, details.open]).toEqual(['before', true, true]);
+    const edit = () => {
+      input.value = 'edited';
+      input.dispatchEvent(new Event('input'));
+      box.checked = false;
+      box.dispatchEvent(new Event('change'));
+      details.open = false;
+      details.dispatchEvent(new Event('toggle'));
+    };
+    edit();
+    expect([text(), checked(), open()]).toEqual(['before', true, true]);
+    bound.set(true);
+    await flush();
+    expect([input.value, box.checked, details.open]).toEqual(['before', true, true]);
+    edit();
+    expect([text(), checked(), open()]).toEqual(['edited', false, false]);
+  });
+
+  it('restarts a pending async child only when the supplied callback changes', async () => {
+    const first = () => 'first',
+      second = () => 'second';
+    const loader = signal(first),
+      unrelated = signal(0);
+    const runs: { signal: AbortSignal; finish: () => void }[] = [];
+    async function* Child({ onLoad }: { onLoad: () => string }, ctx: Ctx) {
+      yield <p>Loading</p>;
+      await new Promise<void>((finish) => runs.push({ signal: ctx.signal, finish }));
+      yield <p>{onLoad()}</p>;
+    }
+    function Host() {
+      return (
+        <section title={String(unrelated())}>
+          <Child onLoad={loader()} />
+        </section>
+      );
+    }
+    dispose = render(<Host />, root);
+    await vi.waitFor(() => expect(runs.length).toBe(1));
+    unrelated.set(1);
+    await tick();
+    expect(runs).toHaveLength(1);
+    loader.set(second);
+    await vi.waitFor(() => expect(runs.length).toBe(2));
+    expect(runs[0].signal.aborted).toBe(true);
+    runs[1].finish();
+    runs[0].finish();
+    await vi.waitFor(() => expect(root.textContent).toBe('second'));
+    expect(runs).toHaveLength(2);
+  });
+
+  it('remounts a dynamic slot whose server text has no revival marker', () => {
+    function Count() {
+      return <output>{0}</output>;
+    }
+    root.innerHTML = renderToString(<Count />);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const handle = claim(Count, {}, root);
+      dispose = () => handle.dispose();
+      expect(root.textContent).toBe('0');
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('slot 0 (node)'));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('identifies the island, slot and path on a development claim fallback', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      root.dataset.asterSrc = '/profile.js#Profile';
+      root.innerHTML = '<section></section>';
+      function Profile() {
+        return (
+          <section>
+            <input value={'Ada'} />
+          </section>
+        );
+      }
+      const handle = claim(Profile, {}, root);
+      dispose = () => handle.dispose();
+      expect(root.querySelector('input')?.value).toBe('Ada');
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringMatching(/profile\.js#Profile.*slot 0.*\[0, 0\]/),
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('shows cancellation and delegated cleanup in the execution lesson', async () => {
+    const lesson = LESSONS.find((item) => item.id === 'generator-execution')!;
+    const preview = mountSandbox(lesson.solution, root);
+    expect(preview.error).toBeNull();
+    dispose = preview.dispose;
+    const press = (label: string) =>
+      Array.from(root.querySelectorAll('button'))
+        .find((b) => b.textContent === label)!
+        .click();
+    const trace = () => Array.from(root.querySelectorAll('li'), (item) => item.textContent);
+    await vi.waitFor(() => expect(trace()).toContain('Request 1: next, waiting'));
+    press('Change request');
+    await vi.waitFor(() => expect(trace()).toContain('Request 2: next, waiting'));
+    expect(trace()).toContain('Request 1: aborted');
+    press('Leave workflow');
+    await vi.waitFor(() =>
+      expect(trace().slice(-2)).toEqual(['Confirmation: finally', 'Workflow: finally']),
+    );
+    press('Finish request');
+    await vi.waitFor(() => expect(trace()).toContain('Request 2: completed'));
+  });
+  it('binds a const signal and reports dynamic binding mistakes at mount', async () => {
+    const draft = signal('Ada');
+    dispose = render(<input bind:value={draft} />, root);
+    const input = root.querySelector('input')!;
+    input.value = 'Grace';
+    input.dispatchEvent(new Event('input'));
+    expect(draft()).toBe('Grace');
+    expect(() => renderToString(<input bind:value={draft().toUpperCase()} />)).toThrow(
+      /bind:value needs a writable/,
+    );
+    expect(() => render(<input bind:value={draft().toUpperCase()} />, root)).toThrow(
+      /bind:value needs a writable/,
+    );
+  });
+
+  it('allows an awaited callback to recover locally and a delegated exception to reach its caller', async () => {
+    const caught = vi.fn();
+    function* Step({ onSave }: { onSave: () => Promise<void> }) {
+      let retry = false;
+      while (!retry)
+        yield (
+          <button
+            onClick={async () => {
+              try {
+                await onSave();
+              } catch {
+                retry = true;
+              }
+            }}
+          >
+            Save
+          </button>
+        );
+      throw new Error('Retry');
+    }
+    function* Child(props: { onSave: () => Promise<void> }) {
+      try {
+        yield* Step(props);
+      } catch (error) {
+        yield <p>{String(error)}</p>;
+      }
+    }
+    function Form() {
+      return (
+        <Child
+          onSave={async () => {
+            throw new Error('offline');
+          }}
+        />
+      );
+    }
+    dispose = render(
+      <ErrorBoundary onError={caught} fallback={() => 'Unexpected error'}>
+        <Form />
+      </ErrorBoundary>,
+      root,
+    );
+    root.querySelector('button')!.click();
+    await tick();
+    expect(root.textContent).toBe('Error: Retry');
+    expect(caught).not.toHaveBeenCalled();
+  });
+
+  it.each(['sync', 'async', 'disposed'])(
+    'routes %s event failures once through the dispatching boundary',
+    async (mode) => {
+      const failure = new Error('save failed');
+      let reject!: (error: Error) => void;
+      function Button({ onSave }: { onSave: () => unknown }) {
+        return <button onClick={onSave}>Save</button>;
+      }
+      function Form() {
+        return (
+          <Button
+            onSave={() => {
+              if (mode === 'sync') throw failure;
+              return new Promise<void>((_, r) => {
+                reject = r;
+              });
+            }}
+          />
+        );
+      }
+      const caught = vi.fn();
+      dispose = render(
+        <ErrorBoundary onError={caught} fallback={() => <p>Retry</p>}>
+          <Form />
+        </ErrorBoundary>,
+        root,
+      );
+      root.querySelector('button')!.click();
+      if (mode === 'disposed') {
+        dispose();
+        dispose = null;
+      }
+      if (mode !== 'sync') reject(failure);
+      await tick();
+      if (mode === 'disposed') {
+        expect(caught).not.toHaveBeenCalled();
+        expect(root.textContent).toBe('');
+      } else {
+        expect(caught.mock.calls).toEqual([[failure]]);
+        expect(root.textContent).toBe('Retry');
+      }
+    },
+  );
+
+  it('keeps an active delegated step across props updates and unwinds it on unmount', async () => {
+    const cleanup: string[] = [];
+    const label = signal('first');
+    function* confirm(name: string) {
+      try {
+        for (;;) yield <button>{name}</button>;
+      } finally {
+        cleanup.push('confirm');
+      }
+    }
+    function* Workflow(props: { name: string }) {
+      try {
+        yield* confirm(props.name);
+      } finally {
+        cleanup.push('workflow');
+      }
+    }
+    function Host() {
+      return <Workflow name={label()} />;
+    }
+    dispose = render(<Host />, root);
+    label.set('replacement');
+    await flush();
+    expect(root.textContent).toBe('first');
+    dispose();
+    dispose = null;
+    expect(cleanup).toEqual(['confirm', 'workflow']);
+  });
   it('restores earlier properties when a later spread drops an attribute', async () => {
     const overrides = signal<Record<string, string | undefined>>({ value: 'last' });
     function* Field() {

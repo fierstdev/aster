@@ -1,9 +1,13 @@
 import './styles.css';
+import { ProfileDemo } from './profile-editor.tsx';
 import llmsTxt from '../llms.txt?raw';
 import { signal, render, defineElement, css, ErrorBoundary, type Ctx } from '@fierst/aster';
 import { Router, useLocation, type RouteDef } from '@fierst/aster/router';
 import { renderToString } from '@fierst/aster/ssr';
-import { LearnView } from './learn.tsx';
+async function* LearnPage() {
+  const { LearnView } = await import('./learn.tsx');
+  yield <LearnView />;
+}
 
 const globalStep = signal(1);
 
@@ -281,6 +285,10 @@ export function* ShowcaseView() {
     yield (
       <div style="display:grid; gap:1.5rem">
         <section class="card">
+          <h2>Edit a profile with yield*</h2>
+          <ProfileDemo />
+        </section>
+        <section class="card">
           <div class="between">
             <h2>Unified Component = Shadow DOM Web Component</h2>
             <div class="row">
@@ -454,7 +462,7 @@ export function* DocsView() {
 // =============================================================================
 const routes: RouteDef[] = [
   { path: '/', component: HomeView },
-  { path: '/learn', component: LearnView },
+  { path: '/learn', component: LearnPage },
   { path: '/showcase', component: ShowcaseView },
   { path: '/docs', component: DocsView },
 ];

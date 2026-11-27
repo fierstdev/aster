@@ -9,7 +9,7 @@ Because Aster components are native JavaScript generators, **`yield*` lets a sub
 ## Example 1: Confirmation Dialog Returning `boolean`
 
 ```tsx
-function* confirmDelete(title: string): Generator<any, boolean, any> {
+function* confirmDelete(title: string) {
   let choice: boolean | null = null;
   while (choice === null) {
     yield (
@@ -27,7 +27,10 @@ function* confirmDelete(title: string): Generator<any, boolean, any> {
   return choice;
 }
 
-export function* TaskRow(props: { task: Task; onDelete: (id: string) => void }, ctx: Ctx<any>) {
+export function* TaskRow(
+  props: { task: Task; onDelete: (id: string) => void },
+  ctx: Ctx<typeof props>,
+) {
   let asking = false;
 
   for (props of ctx) {
@@ -73,3 +76,55 @@ export function* CheckoutFlow() {
 ### Automatic Teardown Propagation
 
 If `CheckoutFlow` unmounts while the user is halfway through `PaymentStep`, Aster calls `gen.return()` on the outer generator. JavaScript automatically propagates that termination into `PaymentStep`'s `finally` block so timers, listeners, or locks are cleaned up cleanly.
+
+## Choosing who advances a workflow
+
+A synchronous component advances once per scheduled update. While `yield*` is active, the delegated generator receives the value passed to `.next()`. A prop update can advance the current step. Arguments captured when the step began retain their values. Key the workflow by record ID when switching records should discard an outstanding confirmation.
+
+An async generator advances again as soon as its previous yield resolves. Use it for finite sequences such as loading, awaiting a request, and displaying a result. Keep click-driven loops in synchronous generators. In an async generator a loop that repeatedly yields while waiting for a click can prevent the browser from dispatching that click.
+
+Exceptions thrown inside a delegated step propagate to the caller's `try/catch`. Unmount calls `.return()` on the outer generator and runs active nested `finally` blocks from the inside out. Use `ctx.signal` for work that supports cancellation and `ctx.refresh()` to request a render after other asynchronous work finishes.
+
+The [profile editor](../../playground/profile-editor.tsx) in the playground showcase demonstrates editing, confirmation with a native dialog, Escape, focus restoration, and retry after a failed save. Its confirmation returns a boolean inferred by TypeScript.
+
+### Moving focus after a yield
+
+Pass the component context into a delegated step to open a dialog once its controls and listeners are ready.
+
+```tsx
+function* confirm(ctx: Ctx) {
+  let accepted: boolean | undefined;
+  while (accepted === undefined) {
+    yield (
+      <dialog
+        aria-label="Confirm change"
+        ref={(dialog) => ctx.afterRender(() => dialog.showModal())}
+        on:cancel={(event) => {
+          event.preventDefault();
+          accepted = false;
+        }}
+      >
+        <button
+          onClick={() => {
+            accepted = false;
+          }}
+        >
+          Cancel
+        </button>
+        <button
+          onClick={() => {
+            accepted = true;
+          }}
+        >
+          Confirm
+        </button>
+      </dialog>
+    );
+  }
+  return accepted;
+}
+```
+
+`ctx.afterRender(callback)` runs once, in registration order, immediately after **this component's** next successful DOM patch. This includes mounting, updates, async yields, and claiming server HTML. Refs point to their elements and synchronous children have mounted by then. The container can be detached, and browser paint and pending async children have their own timing.
+
+Registration alone does not schedule a render. A callback registered inside another callback waits for the next patch. Unmount, replacement of the generator execution, or a failed render discards pending work. Server rendering skips these callbacks. A thrown error or a returned promise rejection goes to the component's error boundary while the execution is active.

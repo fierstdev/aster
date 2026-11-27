@@ -1,2 +1,2 @@
-# The scaffolder copies these files verbatim into the packed starter.
-template/** text=auto eol=lf
+# Match the formatter and the published starter on every checkout.
+* text=auto eol=lf

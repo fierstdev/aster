@@ -1,10 +1,23 @@
-import { describe, expect, it } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vite-plus/test';
 import { _tpl, _slot, _comp, ErrorBoundary, html, type Ctx } from '../src/index.ts';
 import { renderToString, renderDocument, htmlResponse, resolveIslandSrc } from '../src/ssr.ts';
 import { matchRoute, Router, useLocation, useParams, useSearchParams } from '../src/router.ts';
 import { createContext, provide, useContext, Provider } from '../src/index.ts';
 import { renderToStringAsync, renderToStream, streamResponse } from '../src/ssr.ts';
 import { encodeIslandValue, decodeIslandValue } from '../src/island-values.ts';
+
+it('keeps DOM callbacks client-only across SSR modes', async () => {
+  const cb = vi.fn();
+  function Page(_: {}, ctx: Ctx) {
+    ctx.afterRender(cb);
+    return 'ready';
+  }
+  const view = _comp(Page, {});
+  expect(renderToString(view)).toBe('ready');
+  expect(await renderToStringAsync(view)).toBe('ready');
+  expect(await new Response(renderToStream(view)).text()).toContain('ready');
+  expect(cb).not.toHaveBeenCalled();
+});
 
 it('round-trips ordinary data, reserved-looking keys, dates and nested query parameters', async () => {
   const data = {
@@ -280,6 +293,72 @@ describe('SSR Attribute Merging, Range Anchors, Scoped Context, & Streaming', ()
     expect(doc.startsWith('<!doctype html>')).toBe(true);
     expect(doc.indexOf('<template')).toBeGreaterThan(doc.indexOf('<aster-b'));
     expect(doc).toContain('ready</template>');
+  });
+
+  it('awaits all async cleanup and keeps a failed render as the cause', async () => {
+    const failure = new Error('render');
+    const cleanup = new Error('cleanup');
+    const finished: string[] = [];
+    function Page({ fail }: { fail: boolean }, ctx: Ctx) {
+      ctx.onCleanup(async () => {
+        await Promise.resolve();
+        finished.push('one');
+        throw cleanup;
+      });
+      ctx.onCleanup(async () => {
+        await Promise.resolve();
+        finished.push('two');
+      });
+      if (fail) throw failure;
+      return 'ready';
+    }
+    for (const fail of [false, true]) {
+      await expect(renderToStringAsync(_comp(Page, { fail }))).rejects.toMatchObject({
+        errors: [cleanup],
+        cause: fail ? failure : undefined,
+      });
+    }
+    expect(finished).toEqual(['one', 'two', 'one', 'two']);
+    const report = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(renderToString(_comp(Page, { fail: false }))).toBe('ready');
+      await vi.waitFor(() =>
+        expect(report).toHaveBeenCalledWith('[Aster SSR cleanup error]', cleanup),
+      );
+    } finally {
+      report.mockRestore();
+    }
+  });
+
+  it('surfaces deferred cleanup failures on the stream and reports failures after cancellation', async () => {
+    const error = new Error('close');
+    async function* Page({ wait }: { wait: boolean }, ctx: Ctx) {
+      ctx.onCleanup(async () => {
+        throw error;
+      });
+      yield 'loading';
+      if (wait && !ctx.signal.aborted)
+        await new Promise((resolve) =>
+          ctx.signal.addEventListener('abort', resolve, { once: true }),
+        );
+    }
+    await expect(
+      new Response(renderToStream(_comp(Page, { wait: false }))).text(),
+    ).rejects.toMatchObject({ errors: [error] });
+    const report = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const reader = renderToStream(_comp(Page, { wait: true })).getReader();
+      await reader.read();
+      await reader.cancel();
+      await vi.waitFor(() =>
+        expect(report).toHaveBeenCalledWith(
+          '[Aster SSR cleanup error]',
+          expect.objectContaining({ errors: [error] }),
+        ),
+      );
+    } finally {
+      report.mockRestore();
+    }
   });
 
   it('runs registered cleanup for completed, failed and canceled SSR components', async () => {
