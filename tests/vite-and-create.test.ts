@@ -72,6 +72,9 @@ describe('create-aster Project Scaffolder', () => {
     try {
       const res = scaffoldProject('demo-app', tmp);
       expect(res.pkgName).toBe('demo-app');
+      expect(fs.readFileSync(path.join(res.targetDir, 'README.md'), 'utf8').split(/\r?\n/)[0]).toBe(
+        '# `demo-app`',
+      );
       expect(res.created).toContain('package.json');
       expect(res.created).toContain('vite.config.ts');
       expect(res.created).toContain('tsconfig.json');

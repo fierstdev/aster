@@ -4,6 +4,10 @@ All notable changes to **Aster** are documented in this file. The format follows
 
 ---
 
+## [1.2.2] - 2026-11-27
+
+- Preserve the generated project name in the starter README heading.
+
 ## [1.2.1] - 2026-11-27
 
 - New projects include a first-edit walkthrough, an interactive counter, links to lessons and guides, and a project README. The optional AsterUI command adds code-owned components, and the starter loads installed theme tokens with the initial stylesheet.
