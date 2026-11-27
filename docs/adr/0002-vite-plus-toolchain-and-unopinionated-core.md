@@ -12,12 +12,11 @@ Maintaining a custom zero-dependency TypeScript stripper, custom dev server, Ser
 
 Aster adopts **Vite+ (`vp`) as its first-class default toolchain**, while keeping the **runtime 100% browser-native, zero-dependency, and completely unopinionated** about backends, databases, authentication, or CSS methodologies:
 
-1. **Oxc Handles 100% of TypeScript (`oxc: { jsx: 'preserve' }`):**
-   `src/vite.ts` configures Vite+'s Rust Oxc transformer to strip all TypeScript syntax with full spec fidelity while preserving JSX. Aster's `src/compiler.ts` only performs pure JS+JSX → `_tpl()` / `_slot()` / `_comp()` lowering, `bind:*` tuple expansion, and automatic `__asterSrc` stamping—eliminating every line of hand-rolled TypeScript stripping.
+1. **Oxc parses JSX and TSX at build time.** The Vite plugin runs before TypeScript stripping so the slot emitter can refer to the author's original source. Oxc supplies the syntax tree and export declarations. Aster handles slot lowering, two-way bindings, and revival metadata. The browser playground shares the emitter and uses its standalone JavaScript parser.
 2. **One Unified Config (`vite.config.ts`):**
    `vp dev` (HMR), `vp build` (Rolldown), `vp pack` (tsdown library ESM + `.d.ts` output), `vp test` (Vitest), and `vp check` (Oxfmt + Oxlint + TS 7 type checking) all live in a single config file with a single `vite-plus` devDependency.
 3. **Zero Runtime Dependencies & Zero Backend Opinions:**
-   `package.json` ships `"dependencies": {}`. The packed ESM outputs (`dist/index.mjs`, `dist/router.mjs`, `dist/ssr.mjs`, `dist/revive.mjs`) run natively in browsers, Cloudflare `workerd`, or any Web-Standard server—and can even be dropped into a static HTML page via CDN / `<script type="importmap">` using `html`...`` tagged templates without Vite+ at all.
+   The package installs the standalone Oxc parser for the build integrations. The client runtime, router, SSR, and revival entry points run independently of the parser.
 
 ## Consequences
 

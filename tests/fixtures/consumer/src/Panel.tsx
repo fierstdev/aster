@@ -1,9 +1,9 @@
 import type { Ctx, View } from '@fierst/aster';
 import { useParams } from '@fierst/aster/router';
 
-export function activate(event: MouseEvent) {
+export const activate = (event: MouseEvent = new MouseEvent('click')) => {
   (event.currentTarget as HTMLButtonElement).textContent = 'Exported callback ran';
-}
+};
 
 export function* List() {
   let count = 0;

@@ -94,7 +94,9 @@
     "test:package": "node tests/package-smoke.mjs",
     "test:browser": "vp test --project=browser"
   },
-  "dependencies": {},
+  "dependencies": {
+    "oxc-parser": "0.159.0"
+  },
   "devDependencies": {
     "@types/node": "^26.6.9",
     "@vitest/browser-playwright": "5.1.1",

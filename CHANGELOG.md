@@ -4,6 +4,10 @@ All notable changes to **Aster** are documented in this file. The format follows
 
 ---
 
+## Unreleased
+
+- The Vite and Astro integrations use Oxc to parse JSX and TSX by default. Exported arrow components and callbacks with nested default arguments receive revival metadata. Opening-tag comments remain supported, and source maps track copied JavaScript, multiline expressions, and generated binding accessors back to the original module.
+
 ## [1.0.0] - 2026-11-26
 
 - Preserve JSX children, nested client components, and exported callbacks during island revival. Recreate captured callbacks in the owning client component and dispose mounted islands when they leave the document.

@@ -1,5 +1,5 @@
 // Aster JSX-to-Slot Compiler
-// Receives clean JavaScript + JSX after Vite+ / Oxc strips TypeScript (`oxc: { jsx: 'preserve' }`).
+// Shared slot emission and the browser playground's standalone JavaScript + JSX parser.
 // Lowers:
 //   - Intrinsic JSX trees -> hoisted module-level `_tpl(html, bindings)` + `_slot(_tN, values, key)`
 //   - Component JSX (`<Counter {...props} start={10} />`) -> `_comp(Counter, { ...props, start: 10 }, key)`
@@ -49,14 +49,16 @@ interface HoistedTpl {
   bindings: BindingMeta[];
 }
 
-interface JSXAttr {
+export interface JSXAttr {
+  bindable?: boolean;
   name: string;
   value: string | null;
   isExpr: boolean;
   isSpread?: boolean;
 }
 
-interface JSXEl {
+export interface JSXEl {
+  reference?: string;
   kind: 'el';
   tag: string;
   attrs: JSXAttr[];
@@ -134,18 +136,170 @@ function buildLineSourceMap(
   };
 }
 
-export class JSXLowerer {
+export class SlotEmitter {
+  hoisted: HoistedTpl[] = [];
+  usedHelpers = new Set<string>();
+  cleanJsxText(raw: string): string {
+    if (!/[\r\n]/.test(raw)) return raw;
+    const lines = raw.split(/\r\n|\n|\r/);
+    const cleaned: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i].replace(/\t/g, ' ');
+      if (i > 0) line = line.trimStart();
+      if (i < lines.length - 1) line = line.trimEnd();
+      if (line.length > 0) cleaned.push(line);
+    }
+    return cleaned.join(' ');
+  }
+
+  isComponentTag(tag: string): boolean {
+    return (
+      tag.length > 0 &&
+      ((tag[0] === tag[0].toUpperCase() && tag[0] !== tag[0].toLowerCase()) || tag.includes('.'))
+    );
+  }
+
+  emitJSX(el: JSXEl): string {
+    if (el.tag === '') {
+      if (el.children.length === 0) return 'null';
+      if (el.children.length === 1) return this.emitSingleChild(el.children[0]);
+      return `[${el.children.map((c) => this.emitSingleChild(c)).join(', ')}]`;
+    }
+
+    if (this.isComponentTag(el.tag)) {
+      this.usedHelpers.add('_comp');
+      let keyExpr = '';
+      const propParts: string[] = [];
+      for (const a of el.attrs) {
+        if (a.isSpread) {
+          propParts.push(`...(${a.value})`);
+          continue;
+        }
+        if (a.name === 'key') {
+          keyExpr = a.isExpr ? a.value! : JSON.stringify(a.value);
+          continue;
+        }
+        const k = /^[A-Za-z_$][\w$]*$/.test(a.name) ? a.name : JSON.stringify(a.name);
+        if (a.value === null) propParts.push(`${k}: true`);
+        else if (a.isExpr)
+          propParts.push(`${k}: ${this.lowerAttrExpr(a.name, a.value, a.bindable)}`);
+        else propParts.push(`${k}: ${JSON.stringify(a.value)}`);
+      }
+      if (el.children.length === 1) {
+        propParts.push(`children: ${this.emitSingleChild(el.children[0])}`);
+      } else if (el.children.length > 1) {
+        propParts.push(`children: [${el.children.map((c) => this.emitSingleChild(c)).join(', ')}]`);
+      }
+      const propsObj = propParts.length ? `{ ${propParts.join(', ')} }` : '{}';
+      return keyExpr
+        ? `_comp(${el.reference ?? el.tag}, ${propsObj}, ${keyExpr})`
+        : `_comp(${el.reference ?? el.tag}, ${propsObj})`;
+    }
+
+    this.usedHelpers.add('_tpl');
+    this.usedHelpers.add('_slot');
+    const bindings: BindingMeta[] = [];
+    const values: string[] = [];
+    let keyExpr = '';
+
+    const buildHtml = (node: JSXEl, path: number[]): string => {
+      let open = `<${node.tag}`;
+      for (const a of node.attrs) {
+        if (a.isSpread) {
+          const idx = bindings.length;
+          bindings.push({ kind: 'spread', path: [...path] });
+          values.push(a.value!);
+          open += ` data-aster-a${idx}=""`;
+          continue;
+        }
+        if (a.name === 'key') {
+          if (path.length === 1) keyExpr = a.isExpr ? a.value! : JSON.stringify(a.value);
+          continue;
+        }
+        const isDirective =
+          a.name.startsWith('var:') || a.name.startsWith('style:') || a.name.startsWith('class:');
+        if (!a.isExpr && !isDirective) {
+          const attrName = a.name === 'className' ? 'class' : a.name;
+          open +=
+            a.value === null ? ` ${attrName}` : ` ${attrName}="${a.value.replace(/"/g, '&quot;')}"`;
+        } else {
+          const idx = bindings.length;
+          bindings.push({ kind: 'attr', name: a.name, path: [...path] });
+          const expr = a.isExpr
+            ? this.lowerAttrExpr(a.name, a.value!, a.bindable)
+            : a.value === null
+              ? 'true'
+              : JSON.stringify(a.value);
+          values.push(expr);
+          open += ` data-aster-a${idx}=""`;
+        }
+      }
+      if (VOID_TAGS.has(node.tag)) return open + '>';
+      open += '>';
+
+      let inner = '';
+      let domChildIdx = 0;
+      for (const ch of node.children) {
+        if (ch.kind === 'text') {
+          inner += ch.text;
+          domChildIdx++;
+        } else if (ch.kind === 'expr') {
+          const idx = bindings.length;
+          bindings.push({ kind: 'node', path: [...path, domChildIdx] });
+          values.push(ch.code);
+          inner += `<!--aster:${idx}-->`;
+          domChildIdx++;
+        } else if (ch.kind === 'el') {
+          if (ch.tag === '' || this.isComponentTag(ch.tag)) {
+            const idx = bindings.length;
+            bindings.push({ kind: 'node', path: [...path, domChildIdx] });
+            values.push(this.emitJSX(ch));
+            inner += `<!--aster:${idx}-->`;
+            domChildIdx++;
+          } else {
+            inner += buildHtml(ch, [...path, domChildIdx]);
+            domChildIdx++;
+          }
+        }
+      }
+      return `${open}${inner}</${node.tag}>`;
+    };
+
+    const html = buildHtml(el, [0]);
+    const id = `_t${this.hoisted.length + 1}`;
+    this.hoisted.push({ id, html, bindings });
+    const vals = `[${values.join(', ')}]`;
+    return keyExpr ? `_slot(${id}, ${vals}, ${keyExpr})` : `_slot(${id}, ${vals})`;
+  }
+
+  emitSingleChild(ch: JSXChild): string {
+    if (ch.kind === 'text') return JSON.stringify(ch.text);
+    if (ch.kind === 'expr') return ch.code;
+    return this.emitJSX(ch);
+  }
+
+  lowerAttrExpr(name: string, expr: string, bindable?: boolean): string {
+    if (name === 'bind:value' || name === 'bind:checked' || name === 'bind:open') {
+      const trimmed = expr.trim();
+      if (bindable ?? /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])*$/.test(trimmed)) {
+        return `[() => ${trimmed}, (_v) => (${trimmed} = _v)]`;
+      }
+    }
+    return expr;
+  }
+}
+
+class JSXLowerer extends SlotEmitter {
   src: string;
   pos = 0;
-  hoisted: HoistedTpl[] = [];
   // Only JavaScript tokens outside literals, comments and JSX participate in export matching.
   declarationSource = '';
-  usedHelpers = new Set<string>();
   /** Maps each output body line index -> 0-based line index in `this.src` */
   lineMap: number[] = [0];
   private srcLine = 0;
 
   constructor(src: string) {
+    super();
     this.src = src;
   }
 
@@ -430,19 +584,6 @@ export class JSXLowerer {
     }
   }
 
-  cleanJsxText(raw: string): string {
-    if (!/[\r\n]/.test(raw)) return raw;
-    const lines = raw.split(/\r\n|\n|\r/);
-    const cleaned: string[] = [];
-    for (let i = 0; i < lines.length; i++) {
-      let line = lines[i].replace(/\t/g, ' ');
-      if (i > 0) line = line.trimStart();
-      if (i < lines.length - 1) line = line.trimEnd();
-      if (line.length > 0) cleaned.push(line);
-    }
-    return cleaned.join(' ');
-  }
-
   parseJSXChildren(closingTag: string): JSXChild[] {
     const children: JSXChild[] = [];
     const closeMarker = `</${closingTag}>`;
@@ -494,141 +635,6 @@ export class JSXLowerer {
       }
     }
     return children;
-  }
-
-  isComponentTag(tag: string): boolean {
-    return (
-      tag.length > 0 &&
-      ((tag[0] === tag[0].toUpperCase() && tag[0] !== tag[0].toLowerCase()) || tag.includes('.'))
-    );
-  }
-
-  emitJSX(el: JSXEl): string {
-    if (el.tag === '') {
-      if (el.children.length === 0) return 'null';
-      if (el.children.length === 1) return this.emitSingleChild(el.children[0]);
-      return `[${el.children.map((c) => this.emitSingleChild(c)).join(', ')}]`;
-    }
-
-    if (this.isComponentTag(el.tag)) {
-      this.usedHelpers.add('_comp');
-      let keyExpr = '';
-      const propParts: string[] = [];
-      for (const a of el.attrs) {
-        if (a.isSpread) {
-          propParts.push(`...(${a.value})`);
-          continue;
-        }
-        if (a.name === 'key') {
-          keyExpr = a.isExpr ? a.value! : JSON.stringify(a.value);
-          continue;
-        }
-        const k = /^[A-Za-z_$][\w$]*$/.test(a.name) ? a.name : JSON.stringify(a.name);
-        if (a.value === null) propParts.push(`${k}: true`);
-        else if (a.isExpr) propParts.push(`${k}: ${this.lowerAttrExpr(a.name, a.value)}`);
-        else propParts.push(`${k}: ${JSON.stringify(a.value)}`);
-      }
-      if (el.children.length === 1) {
-        propParts.push(`children: ${this.emitSingleChild(el.children[0])}`);
-      } else if (el.children.length > 1) {
-        propParts.push(`children: [${el.children.map((c) => this.emitSingleChild(c)).join(', ')}]`);
-      }
-      const propsObj = propParts.length ? `{ ${propParts.join(', ')} }` : '{}';
-      return keyExpr
-        ? `_comp(${el.tag}, ${propsObj}, ${keyExpr})`
-        : `_comp(${el.tag}, ${propsObj})`;
-    }
-
-    this.usedHelpers.add('_tpl');
-    this.usedHelpers.add('_slot');
-    const bindings: BindingMeta[] = [];
-    const values: string[] = [];
-    let keyExpr = '';
-
-    const buildHtml = (node: JSXEl, path: number[]): string => {
-      let open = `<${node.tag}`;
-      for (const a of node.attrs) {
-        if (a.isSpread) {
-          const idx = bindings.length;
-          bindings.push({ kind: 'spread', path: [...path] });
-          values.push(a.value!);
-          open += ` data-aster-a${idx}=""`;
-          continue;
-        }
-        if (a.name === 'key') {
-          if (path.length === 1) keyExpr = a.isExpr ? a.value! : JSON.stringify(a.value);
-          continue;
-        }
-        const isDirective =
-          a.name.startsWith('var:') || a.name.startsWith('style:') || a.name.startsWith('class:');
-        if (!a.isExpr && !isDirective) {
-          const attrName = a.name === 'className' ? 'class' : a.name;
-          open +=
-            a.value === null ? ` ${attrName}` : ` ${attrName}="${a.value.replace(/"/g, '&quot;')}"`;
-        } else {
-          const idx = bindings.length;
-          bindings.push({ kind: 'attr', name: a.name, path: [...path] });
-          const expr = a.isExpr
-            ? this.lowerAttrExpr(a.name, a.value!)
-            : a.value === null
-              ? 'true'
-              : JSON.stringify(a.value);
-          values.push(expr);
-          open += ` data-aster-a${idx}=""`;
-        }
-      }
-      if (VOID_TAGS.has(node.tag)) return open + '>';
-      open += '>';
-
-      let inner = '';
-      let domChildIdx = 0;
-      for (const ch of node.children) {
-        if (ch.kind === 'text') {
-          inner += ch.text;
-          domChildIdx++;
-        } else if (ch.kind === 'expr') {
-          const idx = bindings.length;
-          bindings.push({ kind: 'node', path: [...path, domChildIdx] });
-          values.push(ch.code);
-          inner += `<!--aster:${idx}-->`;
-          domChildIdx++;
-        } else if (ch.kind === 'el') {
-          if (ch.tag === '' || this.isComponentTag(ch.tag)) {
-            const idx = bindings.length;
-            bindings.push({ kind: 'node', path: [...path, domChildIdx] });
-            values.push(this.emitJSX(ch));
-            inner += `<!--aster:${idx}-->`;
-            domChildIdx++;
-          } else {
-            inner += buildHtml(ch, [...path, domChildIdx]);
-            domChildIdx++;
-          }
-        }
-      }
-      return `${open}${inner}</${node.tag}>`;
-    };
-
-    const html = buildHtml(el, [0]);
-    const id = `_t${this.hoisted.length + 1}`;
-    this.hoisted.push({ id, html, bindings });
-    const vals = `[${values.join(', ')}]`;
-    return keyExpr ? `_slot(${id}, ${vals}, ${keyExpr})` : `_slot(${id}, ${vals})`;
-  }
-
-  emitSingleChild(ch: JSXChild): string {
-    if (ch.kind === 'text') return JSON.stringify(ch.text);
-    if (ch.kind === 'expr') return ch.code;
-    return this.emitJSX(ch);
-  }
-
-  lowerAttrExpr(name: string, expr: string): string {
-    if (name === 'bind:value' || name === 'bind:checked' || name === 'bind:open') {
-      const trimmed = expr.trim();
-      if (/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[^\]]+\])*$/.test(trimmed)) {
-        return `[() => ${trimmed}, (_v) => (${trimmed} = _v)]`;
-      }
-    }
-    return expr;
   }
 }
 
@@ -682,28 +688,33 @@ function collectExportedComponents(jsBody: string) {
 }
 
 /**
- * Full module compiler returning `{ code, map, exportedGenerators, exportedStateless }`.
- * Used by `src/vite.ts` for source-mapped dev/build compilation and automatic HMR.
+ * Standalone JS + JSX compiler for the in-browser editor.
  */
 export function compileModule(source: string, options: CompileOptions = {}): CompileResult {
   const lowerer = new JSXLowerer(source);
   const body = lowerer.run();
-  return finishModule(
-    source,
+  const { headerLineCount, ...module } = emitModule(
     options,
     lowerer,
     body,
     collectExportedComponents(lowerer.declarationSource),
   );
+  const map = buildLineSourceMap(
+    source,
+    headerLineCount,
+    lowerer.lineMap,
+    options.sourceFile ?? options.moduleUrl ?? 'input.tsx',
+  );
+  return { ...module, map };
 }
 
-export function finishModule(
-  source: string,
+export function emitModule(
   options: CompileOptions,
-  lowerer: JSXLowerer,
+  lowerer: SlotEmitter,
   body: string,
   { generators, stateless, callbacks }: ReturnType<typeof collectExportedComponents>,
-): CompileResult {
+  isEntry = /\brender\s*\(/.test(body),
+) {
   const runtimeImport = options.runtimeImport ?? '@fierst/aster';
 
   const footer: string[] = [];
@@ -726,7 +737,6 @@ export function finishModule(
       }
       // Inject self-accepting HMR handler for component modules (skip entry files that call top-level `render(`)
       const hasComponents = generators.length > 0 || stateless.length > 0;
-      const isEntry = /\brender\s*\(/.test(body);
       if (hasComponents && !isEntry) {
         lowerer.usedHelpers.add('__asterHmrAccept');
         footer.push(
@@ -749,16 +759,9 @@ export function finishModule(
   const footerStr = footer.length > 0 ? '\n\n' + footer.join('\n') : '';
   const code = headerStr + body + footerStr;
 
-  const map = buildLineSourceMap(
-    source,
-    headerLineCount,
-    lowerer.lineMap,
-    options.sourceFile ?? options.moduleUrl ?? 'input.tsx',
-  );
-
   return {
     code,
-    map,
+    headerLineCount,
     exportedGenerators: generators.map((g) => g.name),
     exportedCallbacks: callbacks.map((c) => c.name),
     exportedStateless: stateless.map((s) => s.name),

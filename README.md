@@ -7,7 +7,7 @@
 - **Unified Web Components:** Wrap any `function*` with `defineElement()` to expose it as a standard Custom Element with typed attributes and JS property sync.
 - **Automatic Lazy Revival:** `@fierst/aster/vite` automatically stamps exported `function*` components during compile; SSR islands wake up on first interaction with zero `$` syntax and zero `island()` wrappers.
 - **Browser-Native Platform First:** Standard `<a href>` routing via Navigation API + `URLPattern` + View Transitions, native `<dialog closedby="any">` / Popover / `commandfor`, and CSS `@scope` / `CSSStyleSheet`.
-- **Vite+ (`vp`) by Default, Zero Runtime Dependencies:** Rust Oxc strips TypeScript natively (`oxc: { jsx: 'preserve' }`), Rolldown bundles, Vitest tests, Oxlint + Oxfmt + TS 7 check, and `tsdown` packs—all from one `vite.config.ts`. Zero backend opinions; works anywhere.
+- **Vite+ (`vp`) by Default, Zero Runtime Dependencies:** The Vite and Astro integrations parse JSX and TSX with Oxc. Aster emits slot templates and maps expressions to the original source. Vite strips TypeScript and Rolldown bundles the result.
 
 ## Quick Start
 

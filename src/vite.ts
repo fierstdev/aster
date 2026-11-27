@@ -1,11 +1,12 @@
 // Aster — First-Class Vite+ (`vp`) / Rolldown Plugin
-// 1. Configures `oxc: { jsx: 'preserve' }` so Rust Oxc strips 100% of TypeScript natively.
-// 2. Lowers preserved JSX into hoisted `_tpl()` / `_slot()` / `_comp()` + V3 source maps.
+// 1. Parse original JSX/TSX with Oxc before Vite's language transforms.
+// 2. Lower JSX into hoisted `_tpl()` / `_slot()` / `_comp()` calls and a V3 source map.
 // 3. Injects in-place HMR (`__asterHmrAccept`) during `vp dev`.
 // 4. Emits preserved island chunks & `aster-manifest.json` during `vp build` so production
 //    SSR Lazy Revival resolves directly to real content-hashed Rolldown bundle URLs!
 
-import { compileModule, type CompileOptions } from './compiler.ts';
+import type { CompileOptions } from './compiler.ts';
+import { compileModule } from './compiler-oxc.ts';
 
 export type FilterPattern = string | RegExp;
 
@@ -37,7 +38,7 @@ function matchesPattern(id: string, pattern: FilterPattern): boolean {
   return id.includes(pattern);
 }
 
-export function aster(options: AsterPluginOptions = {}, compile = compileModule) {
+export function aster(options: AsterPluginOptions = {}) {
   const include = options.include ?? ['.tsx', '.jsx'];
   const exclude = options.exclude ?? [];
   const manifestFile = options.manifestFile ?? 'aster-manifest.json';
@@ -59,7 +60,8 @@ export function aster(options: AsterPluginOptions = {}, compile = compileModule)
 
   return {
     name: 'aster',
-    // Let Rust Oxc strip 100% of TypeScript syntax while preserving JSX for Aster lowering
+    enforce: 'pre' as const,
+    // Vite handles remaining TypeScript after Aster emits the slots.
     config() {
       return {
         oxc: {
@@ -111,7 +113,7 @@ export function aster(options: AsterPluginOptions = {}, compile = compileModule)
       if (exclude.some((pat) => matchesPattern(cleanId, pat))) return null;
 
       const relPath = toRelPath(cleanId);
-      const result = compile(code, {
+      const result = compileModule(code, {
         runtimeImport: options.runtimeImport ?? '@fierst/aster',
         moduleUrl: relPath,
         sourceFile: relPath,

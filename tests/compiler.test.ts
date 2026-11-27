@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vite-plus/test';
-import { compileJSX, compileModule } from '../src/compiler.ts';
+import { compileModule } from '../src/compiler-oxc.ts';
+import type { CompileOptions } from '../src/compiler.ts';
 import { jsx } from '../src/jsx-runtime.ts';
 import { renderToString } from '../src/ssr.ts';
+
+const compileJSX = (source: string, options?: CompileOptions) =>
+  compileModule(source, options).code;
 
 describe('Aster JSX-to-Slot Compiler', () => {
   it('hoists static HTML into _tpl() and lowers dynamic slots into _slot()', () => {

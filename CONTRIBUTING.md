@@ -1,6 +1,6 @@
 # Contributing to Aster
 
-Thank you for helping build Aster! Our guiding design rule is **ruthless minimalism**: leverage native browser standards first, keep `"dependencies": {}` at zero, and prefer subtraction over adding new abstractions.
+Thank you for helping build Aster! Prefer native browser standards and keep application runtimes free of framework dependencies.
 
 ---
 
@@ -35,7 +35,7 @@ vp build                 # Build playground + aster-manifest.json
 ## Repository Map
 
 - `src/runtime.ts` — Core generator runner (`function*` / `async function*`), slot patching, LIS keyed lists, `signal()`, Context, `<ErrorBoundary>`, `defineElement()`, `css`/`scope`, HMR registry.
-- `src/compiler.ts` — Pure JS+JSX → hoisted `_tpl()` / `_slot()` / `_comp()` compiler + V3 source maps + automatic `__asterSrc` stamping.
+- `src/compiler-oxc.ts` parses build-time JSX and TSX. It shares the slot emitter in `src/compiler.ts` with the browser editor. `src/compiler-map.ts` maps emitted expressions back to the input.
 - `src/vite.ts` — Vite+ / Rolldown plugin (`oxc: { jsx: 'preserve' }`, HMR, production `aster-manifest.json`).
 - `src/ssr.ts` — Sync, async (`renderToStringAsync`), and out-of-order streaming (`renderToStream`) SSR.
 - `src/revive.ts` — Event-Delegated Lazy Revival client loader.
@@ -49,7 +49,7 @@ vp build                 # Build playground + aster-manifest.json
 
 ## Pull Request Guidelines
 
-1. **Keep core unopinionated & zero-dependency:** Do not add runtime entries to `package.json` `"dependencies"`.
+1. **Keep the runtime dependency-free.** The package installs `oxc-parser` for the Vite and Astro build integrations. Keep build tools out of the runtime, SSR, revival loader, and browser editor.
 2. **Test real DOM behavior:** Runtime fixes or features should include a test in `tests/browser/runtime.browser.test.tsx`.
 3. **Keep TypeScript 7 erasable:** All code must satisfy `"erasableSyntaxOnly": true` and produce clean `.d.mts` files via `vp pack` (no private unexported types leaked into public signatures).
 4. **Update docs & `llms.txt`:** Any public API addition or behavioral change must update the corresponding guide and `llms.txt`. Significant architectural changes require an ADR under `docs/adr/`.

@@ -74,7 +74,7 @@ export function* Counter() {
 render(<Counter />, document.getElementById('app')!);
 ```
 
-Under the hood, Vite+'s Rust **Oxc** strips TypeScript (`oxc: { jsx: 'preserve' }`), and `@fierst/aster/vite` lowers JSX into hoisted `<template>` slots and automatically stamps exported `function*` components for Event-Delegated Lazy Revival SSR.
+The Vite plugin parses JSX and TSX with **Oxc** before Vite strips TypeScript. Aster lowers JSX into hoisted template slots, maps expressions back to their original positions, and stamps exported generator components for lazy revival. The Astro integration uses the same compiler.
 
 ---
 
