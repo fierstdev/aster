@@ -12,7 +12,7 @@
     "ui": "vp dlx @fierst/ui@1"
   },
   "dependencies": {
-    "@fierst/aster": "^1.2.2"
+    "@fierst/aster": "^1.2.3"
   },
   "devDependencies": {
     "vite-plus": "^1.0.0"

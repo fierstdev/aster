@@ -4,6 +4,10 @@ All notable changes to **Aster** are documented in this file. The format follows
 
 ---
 
+## [1.2.3] - 2026-11-27
+
+- Ship the guides, Astro integration walkthrough, API reference and standalone `llms.txt` handbook with the package. The playground build also serves the handbook at `/llms.txt`.
+
 ## [1.2.2] - 2026-11-27
 
 - Preserve the generated project name in the starter README heading.

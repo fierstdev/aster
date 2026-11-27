@@ -52,4 +52,4 @@ vp build                 # Build playground + aster-manifest.json
 1. **Keep the runtime dependency-free.** The package installs `oxc-parser` for the Vite and Astro build integrations. Keep build tools out of the runtime, SSR, revival loader, and browser editor.
 2. **Test real DOM behavior:** Runtime fixes or features should include a test in `tests/browser/runtime.browser.test.tsx`.
 3. **Keep TypeScript 7 erasable:** All code must satisfy `"erasableSyntaxOnly": true` and produce clean `.d.mts` files via `vp pack` (no private unexported types leaked into public signatures).
-4. **Update docs & `llms.txt`:** Any public API addition or behavioral change must update the corresponding guide and `llms.txt`. Significant architectural changes require an ADR under `docs/adr/`.
+4. **Update documentation.** Update the relevant guide and API reference for public changes. After editing docs or changing the package version, run `node scripts/build-handbook.mjs` to regenerate `llms.txt`. Significant architectural changes require an ADR under `docs/adr/`.

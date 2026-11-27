@@ -9,6 +9,11 @@ Aster combines **Vite+ (`vp`)** for zero-config Rust-powered tooling with a tiny
 3. [Composable UI Flows with `yield*`](./guides/03-composable-ui-flows.md) — Confirmation modals, multi-step wizards, and automatic teardown propagation.
 4. [Unified Web Components & Native Styling](./guides/04-web-components-and-styling.md) — `defineElement()`, typed attribute coercion, `@scope`, and `CSSStyleSheet`.
 5. [Routing, Automatic Lazy Revival, and Error Boundaries](./guides/05-routing-ssr-and-revival.md) — Navigation API + plain `<a>` + View Transitions, automatic zero-syntax resumability, and `<ErrorBoundary>`.
+6. [Using Aster in Astro](./guides/06-astro.md) — Configure a mixed-framework project, pass slots and choose when an island activates.
+
+## Reference
+
+Use the [API reference](./reference.md) to look up signatures, directives, renderer return values, build options, lifecycle behavior and troubleshooting steps. The [single-file handbook](../llms.txt) contains the guides and reference for offline reading and coding assistants.
 
 ## Architecture Decision Records (ADRs)
 

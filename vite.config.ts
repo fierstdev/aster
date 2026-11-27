@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite-plus';
 import { playwright } from 'vite-plus/test/browser-playwright';
@@ -7,7 +8,20 @@ import aster from './src/vite.ts';
 const rootDir = fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig({
-  plugins: [aster()],
+  plugins: [
+    aster(),
+    {
+      name: 'aster-site-handbook',
+      apply: 'build',
+      generateBundle() {
+        this.emitFile({
+          type: 'asset',
+          fileName: 'llms.txt',
+          source: readFileSync(resolve(rootDir, 'llms.txt')),
+        });
+      },
+    },
+  ],
 
   resolve: {
     alias: {

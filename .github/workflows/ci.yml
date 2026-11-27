@@ -40,6 +40,18 @@ jobs:
       - name: Production Playground Build & Island Manifest
         run: vp build
 
+      - name: Verify packaged and hosted documentation
+        run: |
+          node scripts/build-handbook.mjs
+          git diff --exit-code -- llms.txt
+          cmp llms.txt dist-site/llms.txt
+          npm pack --dry-run --json | node --input-type=module -e "
+            import { readFileSync, readdirSync } from 'node:fs';
+            const paths = new Set(JSON.parse(readFileSync(0, 'utf8'))[0].files.map(f => f.path));
+            for (const file of ['llms.txt', ...readdirSync('docs', { recursive: true }).filter(p => p.endsWith('.md')).map(p => 'docs/' + p)]) {
+              if (!paths.has(file)) throw new Error('Missing package document ' + file);
+            }"
+
       - name: Verify Publish Tarball Contents
         run: |
           npm pack --dry-run

@@ -1,9 +1,9 @@
-# Aster 1.0 release checklist
+# Aster release checklist
 
 ## Verify the candidate
 
-- Confirm the library version is `1.0.0` and the generated starter requests `^1.0.0`.
-- Review the changes since `v1.0.0-alpha.4` and date the 1.0 changelog entry when cutting the release.
+- Confirm the starter requests the new library version with a caret range. Review the changes since the previous tag and date the changelog entry.
+- Regenerate the versioned handbook with `node scripts/build-handbook.mjs` and confirm the built site and npm tarball include it.
 - Run the release checks from a clean checkout with the Node version in `.node-version`.
 
 ```bash
@@ -25,8 +25,9 @@ The package smoke test installs the tarball in a temporary directory and runs it
 2. Create the version tag on that commit when the release is approved. Pushing the tag starts the npm publish workflow.
 
 ```bash
-git tag -a v1.0.0 -m "Aster v1.0.0"
-git push origin v1.0.0
+# Substitute the version from package.json.
+git tag -a vX.Y.Z -m "Aster vX.Y.Z"
+git push origin vX.Y.Z
 ```
 
 3. Approve the protected environment, then verify the npm version, `latest` dist-tag, and provenance. The workflow assigns prereleases to `next`.

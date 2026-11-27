@@ -1,138 +1,109 @@
-# Aster
+# Aster 1.2.3
 
-> Aster is a tiny, browser-native, zero-VDOM web framework powered by JavaScript Generator Components (`function*` / `async function*`), Slot-Compiled `<template>` Patching, Unified Web Components (`defineElement`), and Automatic Event-Delegated Lazy Revival — built on Vite+ (`vp`) with zero runtime dependencies and zero backend opinions.
+When writing Aster components, NEVER use React hooks. Keep local state in a generator, receive fresh props with for (props of ctx), and delegate interactive steps with yield*. DOM event handlers schedule a refresh. External subscriptions can call ctx.refresh() and use ctx.onCleanup() to unsubscribe.
 
-## Rules for AI Coding Assistants (Read First)
+Aster is a browser-native UI framework. Write a function for a view derived from props, a synchronous generator for interactive local state, and a finite async generator for loading and resolved views. Use JSX with the Aster Vite plugin or tagged HTML in JavaScript.
 
-1. **NEVER use React hooks or VDOM patterns:** No `useState`, `useEffect`, `useMemo`, `useCallback`, `useRef`, or `React.Fragment`.
-2. **NEVER use Solid/Vue reactivity boilerplate for local state:** No `() =>` JSX thunks, no `<Show>` / `<For>`, no `.value`, and no `$state` / `$derived` runes.
-3. **Stateful components are `function*` generators:** Declare local state with plain `let`, run setup before the loop, and yield JSX inside `for (props of ctx)` (or `for (;;)` if the component takes no props).
-4. **Always use `for (props of ctx)` when reading `props`:** Writing `for (;;)` freezes `props` at initial mount; forgetting the loop causes the generator to exit (`done: true`) after the first render.
-5. **Stateless components are plain `function`s:** Zero generator allocation and 0 bytes of client JS in SSR.
-6. **Cleanup uses native `try { ... } finally { ... }`:** Triggered automatically via `gen.return()` on unmount.
-7. **Shared client state uses `signal()`:** Read via `sig()`, write via `sig.set(next)` or `sig.update(fn)`. Reading inside a `function*` auto-subscribes that component.
-8. **SSR-safe subtree state uses Context:** Use `createContext()`, `provide()`, `useContext()`, or `<Provider>` so concurrent server requests never share module-level state.
-9. **Lazy Revival is 100% automatic:** NEVER wrap components in `island()` or `$` syntax. Any `export function*` is automatically stamped with `__asterSrc` by `@fierst/aster/vite`.
-10. **Routing uses plain `<a href="/...">` tags:** NEVER import or invent a `<Link>` component. `<Router>` intercepts same-origin links natively via the browser Navigation API + `URLPattern` + View Transitions.
-11. **External push updates need `ctx.refresh()`:** Event handlers (`onClick`, `onSubmit`, `bind:*`, and child `on*` callbacks) auto-refresh; external timers (`setInterval`, `WebSocket`) call `ctx.refresh()`.
-    For focus or native dialogs, use `ref={el => ctx.afterRender(() => el.focus())}`. The callback runs once after the owning component's next successful client DOM patch. Registration does not schedule a render. SSR skips it.
-12. **Native 2026 HTML controls are built-in:** Use `<dialog closedby="any">`, `popover`, `popovertarget`, `commandfor`, `command`, `scope` (`@scope`), and `css` (`CSSStyleSheet`).
+This handbook contains the complete application guides followed by the API reference. For design history, see the [architecture decisions](https://github.com/fierstdev/aster/blob/v1.2.3/docs/README.md).
 
-## Core API Quick Reference
+# 01. Getting Started with Aster (Vite+)
 
-### Imports
-- `@fierst/aster`: `render`, `claim`, `signal`, `createContext`, `provide`, `useContext`, `Provider`, `ErrorBoundary`, `defineElement`, `css`, `scope`, `html`, `type Ctx`
-- `@fierst/aster/router`: `Router`, `navigate`, `matchRoute`, `useLocation`, `useParams`, `useSearchParams`, `type RouteDef`
-- `@fierst/aster/ssr`: `renderToString`, `renderToStringAsync`, `renderDocument`, `htmlResponse`, `renderToStream`, `streamResponse`, `resolveIslandSrc`
-- `@fierst/aster/revive`: `installRevival`
-- `@fierst/aster/vite`: `aster` (default export Vite+ plugin)
-- `@fierst/aster/astro`: `asterAstro` (default export Astro integration supporting `client:load`, `client:idle`, `client:visible`, `client:media`, `client:only`)
+Aster pairs a browser-native generator runtime with Vite+ for development, testing, type checking and production builds. Use Node 20.19 or later for the package. The repository uses the version listed in `.node-version`.
 
-### Canonical Stateful Component (`function*`)
-```tsx
-import { type Ctx } from '@fierst/aster';
+---
 
-export function* Counter(props: { start?: number; label?: string }, ctx: Ctx) {
-  let count = props.start ?? 0;
+## 1. Install Vite+ (`vp`)
 
-  for (props of ctx) {
-    const doubled = count * 2;
-    yield (
-      <button onClick={() => count++}>
-        {props.label ?? 'Clicks'}: {count} (2x = {doubled})
-      </button>
-    );
-  }
-}
+If you don't already have Vite+ installed globally:
+
+```bash
+# macOS / Linux
+curl -fsSL https://vite.plus | bash
+
+# Windows (PowerShell)
+irm https://vite.plus/ps1 | iex
 ```
 
-### Two-Way Form Bindings, Directives, & Keyed Lists
-```tsx
-export function* TodoList() {
-  let draft = '';
-  const items = [{ id: '1', title: 'Ship Aster', done: false }];
+---
 
-  const add = (e: SubmitEvent) => {
-    e.preventDefault();
-    if (!draft.trim()) return;
-    items.unshift({ id: crypto.randomUUID(), title: draft.trim(), done: false });
-    draft = '';
-  };
+## 2. Scaffold a New App in 30 Seconds
 
-  for (;;) {
-    yield (
-      <section>
-        <form onSubmit={add}>
-          <input bind:value={draft} placeholder="New task..." />
-          <button disabled={!draft.trim()}>Add</button>
-        </form>
-        <ul>
-          {items.map((item) => (
-            <li key={item.id}>
-              <input type="checkbox" bind:checked={item.done} />
-              <span class:done={item.done}>{item.title}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
-    );
-  }
-}
+```bash
+vp dlx @fierst/aster my-app
+cd my-app
+vp install
+vp dev
 ```
 
-### Composable Multi-Step UI Flows (`yield*`)
-```tsx
-function* confirmDelete(title: string) {
-  let choice: boolean | null = null;
-  while (choice === null) {
-    yield (
-      <div role="alertdialog">
-        <span>Delete {title}?</span>
-        <button onClick={() => (choice = false)}>Cancel</button>
-        <button onClick={() => (choice = true)}>Confirm</button>
-      </div>
-    );
-  }
-  return choice;
-}
+_(From inside the Aster repo itself, you can also run `node bin/create.mjs my-app`.)_
+
+The CLI names are `aster` and `create-aster`. The default target is `my-aster-app`. Use an empty directory. The optional `--force` flag overwrites matching starter files in an existing directory. Scaffolding copies files and leaves dependency installation to you.
+
+Open the URL printed by `vp dev`. Edit `src/main.tsx`, then click the button from `src/counter.tsx` to see local state persist. To add an optional AsterUI button, run `npm run ui -- add button`, install the dependencies printed by the CLI and import `Button` from `./ui/button`. Run `vp build` to create the static client site in `dist/` and `vp preview` to try it locally. Configure your static host to serve `index.html` for client routes.
+
+---
+
+## 3. Run the Framework Playground & Tests
+
+From the `aster` repository root:
+
+```bash
+vp install      # Install repository dependencies
+vp dev          # Launches the interactive playground at http://localhost:5173/
+vp dlx playwright install chromium  # One-time setup for Browser Mode tests
+vp test         # Runs both Node unit tests and real-Chromium Browser Mode tests
+vp check        # Runs Oxfmt + Oxlint + TypeScript 7 type checking in one pass
+vp pack         # Builds publishable ESM + .d.ts bundles into dist/
 ```
 
-Use synchronous generators for interactive delegated steps. Async generators automatically advance after each yield and should produce finite sequences. Pass a const signal directly to `bind:value`, or supply a mutable local or `[get, set]` pair. Return promises from event handlers for error boundary handling.
+---
 
-### Async Components (`async function*`) & Cancellation
-```tsx
-export async function* UserProfile(props: { id: string }, ctx: Ctx) {
-  yield <p>Loading #{props.id}...</p>;
-  const res = await fetch(`/api/users/${props.id}`, { signal: ctx.signal });
-  const user = await res.json();
-  yield <h2>{user.name}</h2>;
-}
-```
-Note: `async function*` automatically aborts `ctx.signal` and restarts whenever `props` change.
+## 4. Use Aster in Any Vite+ App
 
-### Unified Web Components (`defineElement`)
-```tsx
-import { defineElement, css } from '@fierst/aster';
-import { Counter } from './Counter.tsx';
+Install `@fierst/aster` in the app (for example, `npm install @fierst/aster`). Add `aster()` from `@fierst/aster/vite` to your `vite.config.ts`:
 
-defineElement('aster-counter', Counter, {
-  props: { start: 'number', label: 'string' },
-  shadow: true,
-  styles: css`button { border-radius: 999px; }`,
+```ts
+import { defineConfig } from 'vite-plus';
+import aster from '@fierst/aster/vite';
+
+export default defineConfig({
+  plugins: [aster()],
 });
 ```
 
-### Streaming SSR & Automatic Lazy Revival
-```ts
-import manifest from './dist/aster-manifest.json' with { type: 'json' };
-import { streamResponse } from '@fierst/aster/ssr';
+Set `"jsx": "react-jsx"` and `"jsxImportSource": "@fierst/aster"` in `tsconfig.json`, and write standard `.tsx` components:
+
+```tsx
+import { render } from '@fierst/aster';
+
+export function* Counter() {
+  let count = 0;
+  for (;;) {
+    yield <button onClick={() => count++}>Clicks: {count}</button>;
+  }
+}
+
+render(<Counter />, document.getElementById('app')!);
+```
+
+The Vite plugin parses JSX and TSX with **Oxc** before Vite strips TypeScript. Aster lowers JSX into hoisted template slots, maps expressions back to their original positions, and stamps exported generator components for lazy revival. The Astro integration uses the same compiler.
+
+---
+
+## 5. Universal Edge SSR (`workerd` or Any Fetch Server)
+
+Use a TSX server entry in a Fetch-based host. Build and serve the client assets first, then import that build's manifest in your server bundle.
+
+```tsx
+import manifest from '../dist/aster-manifest.json' with { type: 'json' };
+import { htmlResponse } from '@fierst/aster/ssr';
 import { App } from './app.tsx';
 
 export default {
   fetch(req: Request) {
     const url = new URL(req.url);
-    return streamResponse(<App url={url.pathname + url.search} />, {
-      title: 'Aster App',
+    return htmlResponse(<App url={url.pathname + url.search} />, {
+      title: 'My App',
       revive: true,
       manifest,
     });
@@ -140,14 +111,688 @@ export default {
 };
 ```
 
-Serve the client build and pass its Aster manifest to the SSR renderer. For a custom build supply `revivalUrl` and `runtimeUrl` or map both package names. SSR runs registered cleanup callbacks and preserves each router's own request URL and params. Tagged `html` templates also work in server components.
+For a split client/server build, keep browser-safe components in shared modules. Import the island modules from the client entry (a side-effect import such as `import './Counter.tsx'` lets the plugin discover its exports). Run `vp build` for the client, then `vp build --ssr src/server.tsx --outDir dist-server` for a server entry at that path. Resolve the manifest import relative to the entry file, for example `../dist/aster-manifest.json` from `src/server.tsx`. Serve the contents of `dist/` at the configured public base. Route document requests to your Fetch handler and asset requests to the client files. The handler above is a Fetch-host module, so a Node HTTP server needs its own Request/Response adapter.
 
-## Documentation
-Island props can contain JSX children, client component exports, and named handlers exported from compiled client modules. An exported component can recreate locally captured handlers on activation. Keep request-only capabilities and private data on the server.
+# 02. Components, Local State, and Signals
 
-- [Getting Started](./docs/guides/01-getting-started.md)
-- [Components, Local State, and Signals](./docs/guides/02-components-and-state.md)
-- [Composable UI Flows with yield*](./docs/guides/03-composable-ui-flows.md)
-- [Unified Web Components & Native Styling](./docs/guides/04-web-components-and-styling.md)
-- [Routing, SSR, Lazy Revival, & Error Boundaries](./docs/guides/05-routing-ssr-and-revival.md)
-- [Architecture Decision Records (ADRs)](./docs/README.md)
+Aster has a two-sentence state rule:
+
+> **Use plain `let` inside `function*` for local component state. Use `signal()` only when sharing state across components.**
+
+---
+
+## 1. Stateless Components (`function`)
+
+If a component only transforms props into markup, write an ordinary JavaScript function. It allocates zero generator frames and compiles straight to a static `<template>` slot patch:
+
+```tsx
+export function Badge({ text, tone = 'neutral' }: { text: string; tone?: string }) {
+  return <span class={`pill ${tone}`}>{text}</span>;
+}
+```
+
+---
+
+## 2. Stateful Components (`function*`)
+
+Add `*` to turn any function into a stateful component. Everything **before** `for (props of ctx)` runs once; everything **inside** runs on each update:
+
+```tsx
+import { type Ctx } from '@fierst/aster';
+
+export function* Counter(
+  props: { start?: number; label?: string },
+  ctx: Ctx<{ start?: number; label?: string }>,
+) {
+  // Setup (runs once)
+  let count = props.start ?? 0;
+
+  try {
+    // Render loop (runs on every event, prop change, or shared signal update)
+    for (props of ctx) {
+      const doubled = count * 2; // Always fresh — no computed() needed!
+
+      if (count < 0) {
+        yield <p>Count went negative!</p>;
+        continue;
+      }
+
+      yield (
+        <button onClick={() => count++}>
+          {props.label ?? 'Clicks'}: {count} (2× = {doubled})
+        </button>
+      );
+    }
+  } finally {
+    // Teardown (runs automatically when unmounted via gen.return())
+    console.log('Counter unmounted');
+  }
+}
+```
+
+### Why There Is No Stale-Closure or Thunk Tax
+
+- **No `()` or `.value`:** `count` is a native `number`.
+- **No `() =>` thunks:** `disabled={!draft.trim()}` is evaluated directly on each yield, and the slot runtime diffs only the flat array of dynamic values.
+- **No `<Show>` or `<For>`:** Plain `if / else` and `items.map((item) => <Row key={item.id} ... />)` work natively.
+- **No manual `ctx.refresh()` for child callbacks:** Any `on*` function prop passed to a child component is automatically wrapped with the parent's microtask scheduler.
+
+---
+
+## 3. Two-Way Form Bindings (`bind:*`)
+
+`@fierst/aster/vite` (`src/compiler.ts`) lowers `bind:value={draft}`, `bind:checked={task.done}`, and `bind:open={isOpen}` into getter/setter tuples automatically:
+
+```tsx
+export function* SearchBox() {
+  let query = '';
+  for (;;) {
+    yield (
+      <div>
+        <input bind:value={query} placeholder="Search..." />
+        <button disabled={!query.trim()} onClick={() => (query = '')}>
+          Clear
+        </button>
+      </div>
+    );
+  }
+}
+```
+
+---
+
+Use a mutable local, a writable property, a signal held in a `const` or import, or an explicit `[get, set]` pair. For example, `const query = signal('')` works with `bind:value={query}`. Calling `query()` there supplies only its current value. Both compilers flag a known scalar at its JSX source location. A factory returning a binding is checked during server rendering or when the control mounts.
+
+DOM handlers and custom binding setters can throw or return a rejecting promise. Aster forwards that failure to the nearest error boundary around the component that rendered the listener, or logs the event or binding name when there is no boundary. Return or await asynchronous callbacks to keep their errors in the event chain.
+
+Use `on:keydown={event => event.key === 'Escape' && event.currentTarget.blur()}` for a native keyboard event. TypeScript infers both the event and the element. For application-defined events, augment the DOM interface `GlobalEventHandlersEventMap` with the event name and its `CustomEvent<Detail>` type to infer `event.detail` in JSX.
+
+## 4. Shared Cross-Component State (`signal()`)
+
+When multiple components (including Web Components) need to stay in sync, create a `signal()` in a shared module. Reading `step()` inside any `function*` automatically subscribes that generator:
+
+```tsx
+import { signal } from '@fierst/aster';
+
+export const step = signal(1);
+
+export function* StepDisplay() {
+  for (;;) {
+    // Automatically wakes up whenever step.set(...) is called anywhere
+    yield <span>Current step: +{step()}</span>;
+  }
+}
+```
+
+---
+
+## 5. Async Components (`async function*`)
+
+Use `async function*` to express loading states and sequential fetches as straight-line code. Every component receives `ctx.signal` (`AbortSignal`), which aborts immediately on unmount:
+
+```tsx
+export async function* UserProfile(props: { id: string }, ctx: Ctx) {
+  yield <div class="skeleton">Loading user #{props.id}…</div>;
+
+  const res = await fetch(`/api/users/${props.id}`, { signal: ctx.signal });
+  const user = await res.json();
+
+  yield (
+    <article>
+      <h3>{user.name}</h3>
+      <p>{user.bio}</p>
+    </article>
+  );
+}
+```
+
+---
+
+## 6. Spread Props, Style Objects, and JSX Comments
+
+Standard JSX ergonomics work identically on components and intrinsic HTML elements:
+
+```tsx
+export function ActionButton({ label, ...rest }: { label: string; [key: string]: any }) {
+  return (
+    <button {...rest} style={{ fontWeight: 600 }}>
+      {/* JSX comments are stripped at compile time with zero runtime cost */}
+      {label}
+    </button>
+  );
+}
+```
+
+---
+
+## 7. Tree-Scoped Context (`createContext`, `provide`, `useContext`, `<Provider>`)
+
+Use module-level `signal()` for client-wide state, and **tree-scoped Context** when passing data down a subtree or rendering concurrently on the server (so SSR requests never leak state across users):
+
+```tsx
+import { createContext, provide, useContext, Provider } from '@fierst/aster';
+
+export const UserCtx = createContext<{ name: string } | null>(null);
+
+export function Greeting() {
+  const user = useContext(UserCtx);
+  return <p>Hello, {user ? user.name : 'Guest'}</p>;
+}
+
+export function App({ user }: { user: { name: string } }) {
+  // Option A: imperative inside a parent component
+  provide(UserCtx, user);
+  return <Greeting />;
+
+  // Option B: declarative wrapper
+  // return <Provider context={UserCtx} value={user}><Greeting /></Provider>;
+}
+```
+
+### Automatic `async function*` Prop Restarts
+
+Aster compares each prop with `Object.is`. Changing `id` in `<UserProfile id={selectedId} />` aborts the previous execution and starts a new one. Pass `ctx.signal` to the pending operation so it can settle and let the old generator reach its `finally` block.
+
+Function props participate in this comparison. If a parent passes `load={loadProfile}`, replacing the loader restarts the child. Declare callbacks before the parent generator's render loop when they should keep the same identity across updates. An inline arrow inside the loop creates a fresh function on every render.
+
+In lesson 7 on `/learn`, change a request while it is waiting, then leave a delegated confirmation. The execution trace shows the abort and the order of the two `finally` blocks.
+
+# 03. Composable UI Flows with `yield*`
+
+In traditional frameworks, interactive sub-flows—confirmation dialogs, multi-step onboarding wizards, inline editors, or step-up authentication—force you to scatter boolean flags (`isConfirmOpen`, `pendingId`, `stepIndex`) and callback props across your component.
+
+Because Aster components are native JavaScript generators, **`yield*` lets a sub-generator temporarily take over rendering and return a strongly typed value directly to its caller**—with 0 bytes of extra framework code.
+
+---
+
+## Example 1: Confirmation Dialog Returning `boolean`
+
+```tsx
+function* confirmDelete(title: string) {
+  let choice: boolean | null = null;
+  while (choice === null) {
+    yield (
+      <div class="confirm-box" role="alertdialog">
+        <span>
+          Delete <strong>{title}</strong>?
+        </span>
+        <button onClick={() => (choice = false)}>Cancel</button>
+        <button class="danger" onClick={() => (choice = true)}>
+          Delete
+        </button>
+      </div>
+    );
+  }
+  return choice;
+}
+
+export function* TaskRow(
+  props: { task: Task; onDelete: (id: string) => void },
+  ctx: Ctx<typeof props>,
+) {
+  let asking = false;
+
+  for (props of ctx) {
+    if (asking) {
+      // Hands UI control to confirmDelete(); resumes right here with true or false!
+      const confirmed = yield* confirmDelete(props.task.title);
+      asking = false;
+      if (confirmed) {
+        props.onDelete(props.task.id);
+        return;
+      }
+    }
+
+    yield (
+      <li>
+        <span>{props.task.title}</span>
+        <button onClick={() => (asking = true)}>Delete</button>
+      </li>
+    );
+  }
+}
+```
+
+---
+
+## Example 2: Multi-Step Checkout Wizard (Zero State-Machine Libraries)
+
+```tsx
+export function* CheckoutFlow() {
+  const shipping = yield* ShippingStep();
+  const payment = yield* PaymentStep(shipping);
+  const confirmed = yield* ReviewStep(shipping, payment);
+
+  if (!confirmed) {
+    yield <p>Order cancelled.</p>;
+    return;
+  }
+
+  yield <p>Order placed for {shipping.email}!</p>;
+}
+```
+
+### Automatic Teardown Propagation
+
+If `CheckoutFlow` unmounts while the user is halfway through `PaymentStep`, Aster calls `gen.return()` on the outer generator. JavaScript automatically propagates that termination into `PaymentStep`'s `finally` block so timers, listeners, or locks are cleaned up cleanly.
+
+## Choosing who advances a workflow
+
+A synchronous component advances once per scheduled update. While `yield*` is active, the delegated generator receives the value passed to `.next()`. A prop update can advance the current step. Arguments captured when the step began retain their values. Key the workflow by record ID when switching records should discard an outstanding confirmation.
+
+An async generator advances again as soon as its previous yield resolves. Use it for finite sequences such as loading, awaiting a request, and displaying a result. Keep click-driven loops in synchronous generators. In an async generator a loop that repeatedly yields while waiting for a click can prevent the browser from dispatching that click.
+
+Exceptions thrown inside a delegated step propagate to the caller's `try/catch`. Unmount calls `.return()` on the outer generator and runs active nested `finally` blocks from the inside out. Use `ctx.signal` for work that supports cancellation and `ctx.refresh()` to request a render after other asynchronous work finishes.
+
+The [profile editor](https://github.com/fierstdev/aster/blob/main/playground/profile-editor.tsx) in the playground showcase demonstrates editing, confirmation with a native dialog, Escape, focus restoration, and retry after a failed save. Its confirmation returns a boolean inferred by TypeScript.
+
+### Moving focus after a yield
+
+Pass the component context into a delegated step to open a dialog once its controls and listeners are ready.
+
+```tsx
+function* confirm(ctx: Ctx) {
+  let accepted: boolean | undefined;
+  while (accepted === undefined) {
+    yield (
+      <dialog
+        aria-label="Confirm change"
+        ref={(dialog) => ctx.afterRender(() => dialog.showModal())}
+        on:cancel={(event) => {
+          event.preventDefault();
+          accepted = false;
+        }}
+      >
+        <button
+          onClick={() => {
+            accepted = false;
+          }}
+        >
+          Cancel
+        </button>
+        <button
+          onClick={() => {
+            accepted = true;
+          }}
+        >
+          Confirm
+        </button>
+      </dialog>
+    );
+  }
+  return accepted;
+}
+```
+
+`ctx.afterRender(callback)` runs once, in registration order, immediately after **this component's** next successful DOM patch. This includes mounting, updates, async yields, and claiming server HTML. Refs point to their elements and synchronous children have mounted by then. The container can be detached, and browser paint and pending async children have their own timing.
+
+Registration alone does not schedule a render. A callback registered inside another callback waits for the next patch. Unmount, replacement of the generator execution, or a failed render discards pending work. Server rendering skips these callbacks. A thrown error or a returned promise rejection goes to the component's error boundary while the execution is active.
+
+# 04. Unified Web Components & Native Styling
+
+Aster eliminates the split between "framework component" and "Web Component." You write **one** `function*` component and register it with `defineElement()` whenever you want to expose it as a standard HTML Custom Element.
+
+---
+
+## 1. Write Once, Mount Anywhere
+
+```tsx
+import { defineElement, css, type Ctx } from '@fierst/aster';
+
+export function* Counter(
+  props: { start?: number; label?: string },
+  ctx: Ctx<{ start?: number; label?: string }>,
+) {
+  let count = props.start ?? 0;
+  for (props of ctx) {
+    yield (
+      <button onClick={() => count++}>
+        {props.label ?? 'Clicks'}: {count}
+      </button>
+    );
+  }
+}
+
+defineElement('aster-counter', Counter, {
+  props: { start: 'number', label: 'string' },
+  shadow: true,
+  styles: css`
+    button {
+      padding: 0.5rem 1rem;
+      border-radius: 999px;
+      background: #0071e3;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+  `,
+});
+```
+
+### What `defineElement()` Handles Automatically
+
+- **Typed Attribute Coercion:** Declaring `{ start: 'number', open: 'boolean', config: 'json' }` parses HTML string attributes before passing them into `Counter`—your component never writes `Number(props.start)`.
+- **JS Property Sync:** Setting `el.label = 'Score'` in JavaScript or `el.setAttribute('label', 'Score')` in HTML both push fresh props into `for (props of ctx)`.
+- **Automatic Cleanup:** `disconnectedCallback()` calls `gen.return()` and aborts `ctx.signal`, executing your component's `try / finally` block cleanly.
+- **Shared Signals Work Across Shadow Boundaries:** If `Counter` reads a shared `signal()`, updating that signal wakes up both `<Counter />` and `<aster-counter>` simultaneously.
+
+---
+
+## 2. Styling: `@scope` vs. Shadow DOM
+
+- **Light DOM (`scope`):** Ideal for app-level UI where global typography and CSS custom properties (`--surface`, `--text`) should cascade naturally while preventing component classes from leaking out.
+  ```tsx
+  import { scope } from '@fierst/aster';
+
+  const cardClass = scope`
+    :scope { padding: 1.25rem; border-radius: 14px; border: 1px solid var(--border); }
+    h3 { margin: 0 0 0.5rem; }
+  `;
+
+  export function Card({ title, children }: any) {
+    return (
+      <section class={cardClass}>
+        <h3>{title}</h3>
+        {children}
+      </section>
+    );
+  }
+  ```
+- **Shadow DOM (`css` or CSS Module Scripts):** Ideal for portable Web Components (`defineElement(..., { shadow: true, styles })`) where strict style encapsulation is desired.
+
+# 05. Routing, Automatic Lazy Revival, and Error Boundaries
+
+## 1. Browser-Native Routing (Zero `<Link>` Wrapper)
+
+`src/router.ts` uses the native **Navigation API** (`window.navigation`), **`URLPattern`**, and **`document.startViewTransition()`**—automatically falling back to the History API in browsers that don't yet support Navigation API.
+
+Just write standard HTML `<a href="/...">` tags:
+
+```tsx
+import { Router, useParams, type RouteDef } from '@fierst/aster/router';
+
+function Home() {
+  return <h1>Home</h1>;
+}
+
+export function* Profile() {
+  for (;;) {
+    const { id } = useParams<{ id: string }>();
+    yield <h1>User #{id}</h1>;
+  }
+}
+
+const routes: RouteDef[] = [
+  { path: '/', component: Home },
+  { path: '/users/:id', component: Profile },
+];
+
+export function App(props: { url?: string }) {
+  return (
+    <main>
+      <nav>
+        <a href="/">Home</a>
+        <a href="/users/42">User #42</a>
+      </nav>
+      <Router routes={routes} url={props.url} fallback={() => <h1>404</h1>} />
+    </main>
+  );
+}
+```
+
+With a mounted browser router, eligible same-origin links use client navigation. Without JavaScript, a link makes an ordinary request to the server. Configure the server to handle each route and pass its request URL to the server-rendered router. Omit the controlled url prop when mounting a client router that should follow browser navigation.
+
+Literal paths, named segments such as `/users/:id`, and wildcards work with the fallback matcher. Route parameters are decoded when possible. A malformed percent escape keeps the captured text available to the route.
+
+---
+
+## 2. Automatic Event-Delegated Lazy Revival
+
+You never wrap components in `island()`, `$`, or `client:visible`. When `@fierst/aster/vite` (`src/compiler.ts`) compiles a `.tsx` module:
+
+- Every **exported stateful generator** (`export function* Counter`) is automatically stamped with `Counter.__asterSrc = '/path/File.js#Counter'`.
+- An exported stateless component can also own an island when the client needs to recreate an event handler or a child composition. Static HTML needs no activation.
+- During SSR (`renderToString(view, { revive: true })` or `htmlResponse()`), Aster automatically wraps the outermost stamped generator in `<aster-island data-aster-src="..." data-aster-props="...">`.
+
+On page load, the delegated listener from `@fierst/aster/revive` runs:
+
+1. Hovering (`pointerenter`) or focusing (`focusin`) inside an island preloads its ES module via `<link rel="modulepreload">`.
+2. A first `keydown`, `click`, `input`, `change`, or `submit` wakes the island. Aster claims the existing DOM and preserves typed input. A deferred native form submission runs browser validation and gives the component's submit handler the original submit button and the opportunity to cancel.
+3. To wake a component before interaction, place `data-aster-eager` on the emitted element that carries `data-aster-src`.
+
+---
+
+### Production Manifest Resolution (`aster-manifest.json`)
+
+During `vp build`, `@fierst/aster/vite` preserves exported generator chunks and emits `aster-manifest.json` mapping source module paths to real content-hashed Rolldown chunks (e.g. `"/src/Counter.tsx": "/assets/Counter-Dk8x2a.js"`). Pass that manifest (or standard Vite `.vite/manifest.json`) to `renderToString()` or `renderDocument()`:
+
+```tsx
+import manifest from './dist/aster-manifest.json' with { type: 'json' };
+import { htmlResponse } from '@fierst/aster/ssr';
+
+return htmlResponse(<App />, { revive: true, manifest });
+```
+
+Serve the client build at its configured base URL. The Aster manifest includes the loader and runtime chunks as well as component entries. Include each interactive component module in the client build. Keep island modules free of application startup side effects since the browser imports them on demand.
+
+For a hand-built client or a standard Vite manifest without those entries, pass browser module URLs in `revivalUrl` and `runtimeUrl`, or provide an import map for `@fierst/aster/revive` and `@fierst/aster`. A failed activation dispatches a bubbling `aster:revival-error` event with the error in `detail`; the next interaction attempts activation again. When installing the loader manually, call the function returned by `installRevival()` to remove its delegated listeners.
+
+SSR route hooks read the nearest router's URL and parameters. Async components on Node can read context across an `await`. On runtimes without `AsyncLocalStorage`, capture context before the first `await` or use the route props. Components can register resource cleanup using `ctx.onCleanup()` on both server and client. Stream consumers can cancel the reader to signal pending generators through `ctx.signal`.
+
+Async SSR awaits promises returned by registered cleanup callbacks. If cleanup fails, the render promise or active stream surfaces an `AggregateError`. Synchronous SSR logs late cleanup rejections, and a canceled stream logs cleanup failures after its reader has gone away.
+
+Each client generator execution has its own `ctx.signal`. After a prop restart or unmount, that execution continues to see its aborted signal, including after an `await`. A cleanup registered on an already aborted context runs immediately. Client teardown reports cleanup failures to the console and continues disposing the component.
+
+Island props support plain data, arrays, dates, query parameters, JSX templates, and exported child components. A named callback exported from a compiled client module travels as a module reference. A callback that closes over component locals is recreated by running its owning client component. Include those modules in the client build. Routed islands also restore their matched URL and parameters.
+
+Only pass public data across an island boundary. A closure created exclusively in a server request handler has no browser implementation. SSR reports its prop path, as it does for cyclic input or unsupported class instances.
+
+### In-Place HMR During `vp dev`
+
+During development, `@fierst/aster/vite` injects self-accepting `import.meta.hot` handlers (`__asterHmrAccept`) into component modules so editing a `function*`, `function`, or `defineElement()` Web Component hot-swaps mounted instances in-place without reloading the page or resetting sibling state.
+
+---
+
+### Async & Out-of-Order Streaming SSR (`renderToStringAsync` & `renderToStream`)
+
+When your tree contains `async function*` components:
+
+- Use **`renderToStringAsync(view, opts)`** to await every async generator to completion and return a single resolved HTML string.
+- Use **`renderToStream(view, opts)`** / **`streamResponse(view, opts)`** for instant TTFB: Aster streams the initial HTML shell with each `async function*`'s first yielded loading skeleton immediately, then flushes self-cleaning `<template>` + `<script>` swap chunks out-of-order as each async component resolves:
+
+```tsx
+import manifest from './dist/aster-manifest.json' with { type: 'json' };
+import { streamResponse } from '@fierst/aster/ssr';
+
+export default {
+  fetch(req: Request) {
+    const url = new URL(req.url);
+    return streamResponse(<App url={url.pathname + url.search} />, {
+      title: 'Streaming Aster',
+      revive: true,
+      manifest,
+    });
+  },
+};
+```
+
+For a nonce-based Content Security Policy, pass the response's nonce as `nonce` in the document options and include the matching nonce in the response's `script-src` header. Aster applies it to its import map, module bootstrap, and deferred streaming swap scripts. The application supplies the policy header and generates a fresh nonce for each response.
+
+---
+
+## 3. Recovering Closed Generators with `<ErrorBoundary>`
+
+In JavaScript, an uncaught error permanently closes a generator (`done: true`). Wrap subtrees in `<ErrorBoundary>` so calling `reset()` mounts a brand-new generator instance cleanly:
+
+```tsx
+import { ErrorBoundary } from '@fierst/aster';
+
+export function SafePanel({ children }: { children?: any }) {
+  return (
+    <ErrorBoundary
+      fallback={(err, reset) => (
+        <div role="alert">
+          <p>Error: {String((err as Error)?.message ?? err)}</p>
+          <button onClick={reset}>Retry</button>
+        </div>
+      )}
+    >
+      {children}
+    </ErrorBoundary>
+  );
+}
+```
+
+# Using Aster in an Astro project
+
+Install `@fierst/aster` in the Astro app and register its integration in `astro.config.mjs`. The integration installs the Aster Vite transform and registers the server and browser renderers.
+
+```js
+import { defineConfig } from 'astro/config';
+import aster from '@fierst/aster/astro';
+
+export default defineConfig({
+  integrations: [aster({ include: ['**/*.aster.tsx'] })],
+});
+```
+
+Here the suffix identifies files that Aster owns in a mixed-framework project. Configure other JSX integrations to exclude those files. With the default configuration, Aster processes all JSX and TSX. The integration accepts include, exclude and runtimeImport. Set jsxImportSource to @fierst/aster for Aster TSX types, or use a file-level JSX import source pragma in a mixed project.
+
+Create `src/components/Panel.aster.tsx`.
+
+```tsx
+/** @jsxImportSource @fierst/aster */
+import type { Ctx, View } from '@fierst/aster';
+
+type Props = { caption?: View; children?: View };
+
+export function* Panel(props: Props, ctx: Ctx<Props>) {
+  let count = 0;
+  for (props of ctx) {
+    yield (
+      <section>
+        <h2>{props.caption}</h2>
+        {props.children}
+        <button onClick={() => count++}>Clicks: {count}</button>
+      </section>
+    );
+  }
+}
+```
+
+Render it in `src/pages/index.astro`.
+
+```astro
+---
+import { Panel } from '../components/Panel.aster';
+---
+<Panel client:visible>
+  <span slot="caption">Cart</span>
+  <p>Items in this order</p>
+</Panel>
+```
+
+The default slot becomes props.children and each named slot becomes the prop of the same name. Astro supplies rendered slot HTML. Render those props as views. With client:visible, the server sends the section and Astro activates it when visible. Use client:load for immediate activation, client:idle for idle time, or client:media="(min-width: 50em)" for a media query. Omit the directive for static HTML. Use client:only="aster" to mount entirely in the browser.
+
+Astro owns the activation schedule. Its island contains Aster's claim markers. The client renderer attaches to the existing children, preserves compatible input state and disposes on astro:unmount during client navigation. The standalone installRevival bootstrap belongs to Aster-rendered documents.
+
+## Adapter entry points
+
+The default integration is also exported as asterAstro. Its types are AsterAstroOptions, AstroIntegration, AstroRendererConfig and AstroSetupContext. The default export of `@fierst/aster/astro/server` exposes check and renderToStaticMarkup, also available as named exports. The former selects Aster components. The latter receives Component, props, slots and optional AstroComponentMetadata and asynchronously returns AstroServerRenderResult with html and optional attrs. AstroServerRenderer describes that contract.
+
+The default export of `@fierst/aster/astro/client` accepts the island element and returns an async function accepting Component, props, slots and AstroClientOptions (client directive). It claims existing HTML or mounts fresh content for an empty or client-only island. Astro invokes these adapter functions for you.
+
+# Aster API reference
+
+The package is ESM. Import browser APIs from `@fierst/aster`, server rendering from `@fierst/aster/ssr`, and build integrations in configuration files. The package requires Node 20.19 or later. Contributors use the Node version in `.node-version`.
+
+## Components and DOM ownership
+
+| Core export                                                                                 | When and how to use it                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ComponentFn<P>`, `View`                                                                    | A function receives props and `Ctx<P>`. Return a view, yield views from a synchronous generator, or yield from an async generator. Views include strings, numbers, booleans, null, undefined, nested arrays, templates and component views. Put asynchronous rendering in an async generator.      |
+| `render(view, element)`                                                                     | Clears the container and mounts a client root. Keep the returned disposal function and call it when removing that root.                                                                                                                                                                            |
+| `claim(Component, props, element)`                                                          | Attach a component to compatible server-rendered children inside the element. Supply the same initial props and markup. Keep SSR comment markers intact. A mismatch can remount the affected content.                                                                                              |
+| `mountComponent(fn, props, parent, before, claimTarget?, onError?, key?, parentContext?)`   | Lower-level host integration. Insert before a sibling or pass null to append. A claim target is an element or a `ClaimRange` with parent and nullable start/end comment anchors. Both mount and claim return a `ComponentHandle` with fn, optional key, update(nextProps), and dispose().          |
+| `signal(initial)`                                                                           | A `Signal<T>` is callable. Read during synchronous render to subscribe, use peek() to read without subscribing, set(value) to replace, or update(previous => next) to derive a replacement. Object.is-equal writes skip notification. Replace mutated collections to notify readers.               |
+| `createContext(defaultValue)`, `provide(context, value)`, `useContext(context)`, `Provider` | Create one shared context identity. Supply its value inside a rendering ancestor or via Provider's context/value props. The nearest provider wins, siblings are isolated, and a missing provider yields the default. On hosts without Node async context storage, capture context before awaiting. |
+| `ErrorBoundary`                                                                             | Wrap children with fallback(error, reset) and optional onError(error). Calling reset mounts fresh children. Return event-handler promises so their rejections reach the owning boundary.                                                                                                           |
+
+A synchronous generator retains local variables between yields. Read incoming props inside `for (props of ctx)`. DOM handlers and child callback props named like events schedule an owner update. For external notifications, change state and call `ctx.refresh()`. Register timers, listeners and subscriptions for disposal with `ctx.onCleanup(fn)` or a generator finally block. Each execution has an AbortSignal at `ctx.signal`. Pass it into fetch. Read DOM after patching with `ctx.afterRender(fn)`, including from a ref callback. It runs once, and registering it alone does not trigger a render.
+
+## JSX and tagged templates
+
+| Syntax                                                             | Behavior                                                                                                                                                                  |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<Row key={row.id} {...row} />`                                    | Use a stable unique key per sibling to retain mounted state and DOM identity as a list reorders. A changed key starts a fresh instance.                                   |
+| `onClick={fn}`, `on:my-event={fn}`                                 | Attach a DOM listener. The colon form preserves the event name. Call event.preventDefault() in handlers that take over native actions.                                    |
+| `bind:value`                                                       | Text uses input, selects use change, and number/range inputs write Number(element.value). Bind a writable local/property, a signal, or a getter/setter pair.              |
+| `bind:checked`, `bind:open`                                        | Checkboxes write a boolean on change. Details tracks toggle. Dialog opens modally, closes when false, and writes back on close.                                           |
+| `class:active={flag}`, `style:color={color}`, `var:accent={color}` | Toggle one class, set one style property, or set a CSS custom property such as --accent. A style object supports camelCase keys and removes properties dropped on update. |
+| `{...attrs}`, `ref={fn}`                                           | Later attributes override earlier ones. Dropping a spread key restores an earlier value when present. A ref receives the mounted or claimed element.                      |
+| `disabled={flag}`, `aria-expanded={flag}`                          | False removes an ordinary boolean attribute. ARIA booleans remain the strings true and false.                                                                             |
+
+Use the `html` tag in JavaScript modules for fixed markup with dynamic children or whole attribute values. Each template site caches its structure. For two-way binding in tagged HTML, pass a signal or an explicit getter/setter pair. For example, this browser module mounts and disposes a small form.
+
+```js
+import { html, render, signal } from '@fierst/aster';
+
+const name = signal('');
+const dispose = render(html`<input aria-label="Name" bind:value=${name} />`, document.body);
+// When the host removes this form, call dispose().
+```
+
+The `@fierst/aster/jsx-runtime` and `@fierst/aster/jsx-dev-runtime` entries expose `jsx`, `jsxs`, `jsxDEV`, `Fragment`, the TypeScript `JSX` namespace and the three slot helpers. Automatic JSX uses cached runtime templates. Use the Vite plugin for binding transforms, source maps, HMR and island metadata.
+
+### Compiler and adapter vocabulary
+
+`_tpl(html, bindings)` creates a CompiledTemplate with indexed SlotBinding records for node, attr, or spread paths. `_slot(template, values, key?)` creates a SlotView branded by SLOT. `_comp(fn, props?, key?, src?)` creates a CompView branded by COMP. The client patches slots when values change. Table fragments and SVG descendants use their native parsing contexts. Framework adapters use `_runWithContext` to scope execution, `_decodeIslandValue` to restore encoded props, and `__asterHmrAccept` to replace mounted component code during development. Application components normally use JSX or tagged HTML.
+
+## Custom elements and styles
+
+`defineElement(tag, Component, options?)` registers and returns a CustomElementConstructor. In DefineElementOptions, props accepts a list of string attribute names or a map to PropType (string, number, boolean, json). Number uses Number(raw). A present boolean is true except for the literal "false". Removing it sets false. Other removed attributes and malformed JSON yield undefined. JS property assignment passes the value directly into props. On disconnect the element disposes its component, and on reconnect it mounts again.
+
+The default mount is light DOM. Use shadow: true or 'open' for an open shadow root, or 'closed' for a closed one. The styles option accepts one constructed stylesheet or a list for the shadow root. The browser-only `css` tag creates a CSSStyleSheet. The `scope` tag returns a generated class name and installs its stylesheet when document.adoptedStyleSheets is available. Call it once at module scope. On the server it only generates the name. Supply a CSS file when the first server-rendered paint needs those styles.
+
+## Router
+
+`@fierst/aster/router` exports Router, navigate, matchRoute, useLocation, useParams, useSearchParams and the RouteDef and RouteMatch types. Declare routes in priority order. A RouteDef has path and component. A match contains route, decoded params, pathname and search (URLSearchParams). matchRoute(routes, url) returns the first match or null. Literal segments, :name and * work with both matchers. Wildcard captures use numeric names in the fallback.
+
+Router passes {params, pathname, search} to the matched component. Its optional fallback receives {pathname} on a miss. Without a fallback the router renders empty content. Supply url for a controlled location, including the query string during SSR. Omit it in a client router that follows browser navigation. useLocation() reads the current URL, useParams<T>() reads the captures, and useSearchParams() parses the query.
+
+Use ordinary links for navigation. Set transitions={false} on Router to disable its view transitions. navigate(to, {replace, transition}) uses browser navigation when available, otherwise History API and the supplied transition setting. With the History fallback Aster intercepts unmodified primary clicks on root-relative links, skips download, target and data-aster-reload links, and listens for popstate. Configure your host to serve direct route requests as well.
+
+## Server output and activation
+
+| Import from @fierst/aster/ssr                | Result                                                                                                                                                                                                |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| renderToString(view, opts?)                  | HTML fragment. Synchronous generators render their first step. Async generators produce empty content in this mode.                                                                                   |
+| renderToStringAsync(view, opts?)             | Promise of a fragment. Consumes finite async generators and renders their final view.                                                                                                                 |
+| renderDocument(view, opts?)                  | Synchronous complete HTML document.                                                                                                                                                                   |
+| htmlResponse(view, opts?, status = 200)      | Fetch Response wrapping that document with an HTML content type. Pass 404 explicitly for HTTP-level misses.                                                                                           |
+| renderToStream(view, opts?)                  | ReadableStream of UTF-8 document bytes. Yield loading content before the first slow await. Each async boundary sends its final replacement when it finishes. Canceling the stream aborts active work. |
+| streamResponse(view, opts?, status = 200)    | Fetch Response backed by the document stream.                                                                                                                                                         |
+| resolveIslandSrc(src, manifest?, base = '/') | Resolve a source path through a RevivalManifest, preserving its #export. Accepts a filename or {file} entry. Relative targets use base. Missing entries keep the original URL.                        |
+
+Fragment SSROptions are revive (opt in), manifest and base. DocumentOptions supports those and defaults revive to true, lang to 'en', and title to 'Aster'. Set head to trusted HTML, importmap to a specifier-to-URL map, nonce to the response's CSP nonce, and revivalUrl/runtimeUrl to override browser entry URLs. A fragment with revival markers needs a host-installed loader. For a static document use {revive: false}. Streaming swaps still use scripts to display deferred content.
+
+Island props support null, undefined, strings, booleans, finite numbers, arrays, plain objects, valid dates, URLSearchParams, templates, client component views and exported client callbacks. These values and module references are visible to the browser. For a captured callback, export the owning component so the browser can recreate the closure. The encoder reports a path when a value is cyclic, a server-only closure, or an unsupported instance.
+
+`installRevival(runtimeUrl?)` from `@fierst/aster/revive` installs delegated listeners in the browser and returns a function to abort those listeners. Install once per document. Pointer entry and focus preload a module. Keydown, click, input, change and submit activate the closest dormant island, claim its DOM, then replay the interaction. To activate at startup, mark the island wrapper itself with data-aster-eager. Removed activated islands are disposed. A failed import/claim dispatches a bubbling aster:revival-error with the error in event.detail. A later interaction can retry.
+
+## Vite configuration and production builds
+
+`@fierst/aster/vite` exports default and named aster(options?) plus AsterPluginOptions and FilterPattern. Include defaults to ['.tsx', '.jsx'], exclude to [], runtimeImport to '@fierst/aster', manifestFile to 'aster-manifest.json'. Use the option names `include`, `exclude`, `runtimeImport`, and `manifestFile`. Each filter accepts strings or regular expressions in an array. A leading dot denotes an extension suffix, wildcard patterns match paths, and other strings match substrings. Excludes take precedence.
+
+The pre-transform parses with Oxc, emits hoisted templates and source mappings, then lets Vite strip TypeScript. Client builds preserve reached client exports and emit the manifest, runtime and revival entry chunks. Include every island module in the client build graph. Deploy the client assets at the configured Vite base and give the server the manifest from that same build. An SSR-only build does not produce the client manifest.
+
+## Diagnosing an application
+
+| Symptom                                                  | Check                                                                                                                                                                                                             |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Counter changes in a click but stays stale after a timer | Schedule ctx.refresh() after changing a local, or read a signal during render and update that signal.                                                                                                             |
+| Async child keeps reloading                              | Compare its props by identity. Move stable loader callbacks outside the parent render loop.                                                                                                                       |
+| Input moves to a different list item                     | Key rows by stable record IDs. Keep server and first client output compatible and preserve SSR markers.                                                                                                           |
+| Server content is missing or a streaming response stalls | Choose an async renderer and make the generator finite. Yield the loading view before slow work.                                                                                                                  |
+| First interaction does nothing in production             | Inspect data-aster-src, its export name, the two loader URLs, and the network response for each module. Check aster:revival-error and the deployment base.                                                        |
+| A lesson runs locally but fails in the learning editor   | The editor accepts JavaScript/JSX, a component named App or a default export, and supported named imports from the core package. Use a scaffolded project for TypeScript, router, Astro, and third-party imports. |

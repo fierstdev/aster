@@ -11,6 +11,8 @@
 
 ## Quick Start
 
+Start with the [getting-started guide](./docs/guides/01-getting-started.md), browse the [documentation index](./docs/README.md), or look up a signature in the [API reference](./docs/reference.md). The [single-file handbook](./llms.txt) ships with the package alongside the guides.
+
 ```bash
 # Scaffold a new project
 vp dlx @fierst/aster my-app && cd my-app && vp install && vp dev
@@ -29,7 +31,7 @@ Generated apps include an optional AsterUI command. Run `npm run ui -- add butto
 
 - `src/` — `index.ts`, `runtime.ts`, `jsx-runtime.ts`, `router.ts`, `ssr.ts`, `revive.ts`, `compiler.ts`, `vite.ts`, `astro/` (`index.ts`, `server.ts`, `client.ts`, `slots.ts`)
 - `playground/` — Multi-page `aster.fierst.dev` site & Svelte-style interactive `/learn` studio
-- `llms.txt` — Concise AI coding assistant reference (shipped in npm package)
+- `llms.txt` — Standalone guides and API reference for coding assistants
 - `tests/` — Vitest Node unit suites + real-Chromium Browser Mode suite (`tests/browser/runtime.browser.test.tsx`)
 - `bin/` & `template/` — Zero-dependency `create-aster` project scaffolder
-- `docs/` — [5 Guides & 5 ADRs](./docs/README.md)
+- `docs/` — [Guides, API reference and architectural decisions](./docs/README.md)

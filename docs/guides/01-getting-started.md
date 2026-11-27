@@ -1,6 +1,6 @@
 # 01. Getting Started with Aster (Vite+)
 
-Aster pairs a **~3–5 KB browser-native generator runtime** with **Vite+ (`vp`)** for zero-config development, testing, type checking, and production builds—with zero runtime dependencies and zero opinions about your backend.
+Aster pairs a browser-native generator runtime with Vite+ for development, testing, type checking and production builds. Use Node 20.19 or later for the package. The repository uses the version listed in `.node-version`.
 
 ---
 
@@ -29,6 +29,10 @@ vp dev
 
 _(From inside the Aster repo itself, you can also run `node bin/create.mjs my-app`.)_
 
+The CLI names are `aster` and `create-aster`. The default target is `my-aster-app`. Use an empty directory. The optional `--force` flag overwrites matching starter files in an existing directory. Scaffolding copies files and leaves dependency installation to you.
+
+Open the URL printed by `vp dev`. Edit `src/main.tsx`, then click the button from `src/counter.tsx` to see local state persist. To add an optional AsterUI button, run `npm run ui -- add button`, install the dependencies printed by the CLI and import `Button` from `./ui/button`. Run `vp build` to create the static client site in `dist/` and `vp preview` to try it locally. Configure your static host to serve `index.html` for client routes.
+
 ---
 
 ## 3. Run the Framework Playground & Tests
@@ -36,7 +40,7 @@ _(From inside the Aster repo itself, you can also run `node bin/create.mjs my-ap
 From the `aster` repository root:
 
 ```bash
-vp install      # Installs the single `vite-plus` devDependency
+vp install      # Install repository dependencies
 vp dev          # Launches the interactive playground at http://localhost:5173/
 vp dlx playwright install chromium  # One-time setup for Browser Mode tests
 vp test         # Runs both Node unit tests and real-Chromium Browser Mode tests
@@ -48,7 +52,7 @@ vp pack         # Builds publishable ESM + .d.ts bundles into dist/
 
 ## 4. Use Aster in Any Vite+ App
 
-Add `aster()` from `@fierst/aster/vite` to your `vite.config.ts`:
+Install `@fierst/aster` in the app (for example, `npm install @fierst/aster`). Add `aster()` from `@fierst/aster/vite` to your `vite.config.ts`:
 
 ```ts
 import { defineConfig } from 'vite-plus';
@@ -80,10 +84,10 @@ The Vite plugin parses JSX and TSX with **Oxc** before Vite strips TypeScript. A
 
 ## 5. Universal Edge SSR (`workerd` or Any Fetch Server)
 
-`@fierst/aster/ssr` depends solely on Web Standards (`Request`, `Response`, `AbortController`):
+Use a TSX server entry in a Fetch-based host. Build and serve the client assets first, then import that build's manifest in your server bundle.
 
-```ts
-import manifest from './dist/aster-manifest.json' with { type: 'json' };
+```tsx
+import manifest from '../dist/aster-manifest.json' with { type: 'json' };
 import { htmlResponse } from '@fierst/aster/ssr';
 import { App } from './app.tsx';
 
@@ -98,3 +102,5 @@ export default {
   },
 };
 ```
+
+For a split client/server build, keep browser-safe components in shared modules. Import the island modules from the client entry (a side-effect import such as `import './Counter.tsx'` lets the plugin discover its exports). Run `vp build` for the client, then `vp build --ssr src/server.tsx --outDir dist-server` for a server entry at that path. Resolve the manifest import relative to the entry file, for example `../dist/aster-manifest.json` from `src/server.tsx`. Serve the contents of `dist/` at the configured public base. Route document requests to your Fetch handler and asset requests to the client files. The handler above is a Fetch-host module, so a Node HTTP server needs its own Request/Response adapter.

@@ -13,7 +13,7 @@ function Home() {
   return <h1>Home</h1>;
 }
 
-function* Profile() {
+export function* Profile() {
   for (;;) {
     const { id } = useParams<{ id: string }>();
     yield <h1>User #{id}</h1>;
@@ -38,7 +38,7 @@ export function App(props: { url?: string }) {
 }
 ```
 
-Same-origin `<a>` clicks are intercepted natively with smooth View Transitions, and work even with JavaScript disabled.
+With a mounted browser router, eligible same-origin links use client navigation. Without JavaScript, a link makes an ordinary request to the server. Configure the server to handle each route and pass its request URL to the server-rendered router. Omit the controlled url prop when mounting a client router that should follow browser navigation.
 
 Literal paths, named segments such as `/users/:id`, and wildcards work with the fallback matcher. Route parameters are decoded when possible. A malformed percent escape keeps the captured text available to the route.
 
@@ -56,7 +56,7 @@ On page load, the delegated listener from `@fierst/aster/revive` runs:
 
 1. Hovering (`pointerenter`) or focusing (`focusin`) inside an island preloads its ES module via `<link rel="modulepreload">`.
 2. A first `keydown`, `click`, `input`, `change`, or `submit` wakes the island. Aster claims the existing DOM and preserves typed input. A deferred native form submission runs browser validation and gives the component's submit handler the original submit button and the opportunity to cancel.
-3. Need a component (like a live WebSocket ticker) to wake up before any user interaction? Add `data-aster-eager` to its container element.
+3. To wake a component before interaction, place `data-aster-eager` on the emitted element that carries `data-aster-src`.
 
 ---
 
@@ -64,7 +64,7 @@ On page load, the delegated listener from `@fierst/aster/revive` runs:
 
 During `vp build`, `@fierst/aster/vite` preserves exported generator chunks and emits `aster-manifest.json` mapping source module paths to real content-hashed Rolldown chunks (e.g. `"/src/Counter.tsx": "/assets/Counter-Dk8x2a.js"`). Pass that manifest (or standard Vite `.vite/manifest.json`) to `renderToString()` or `renderDocument()`:
 
-```ts
+```tsx
 import manifest from './dist/aster-manifest.json' with { type: 'json' };
 import { htmlResponse } from '@fierst/aster/ssr';
 
@@ -98,7 +98,7 @@ When your tree contains `async function*` components:
 - Use **`renderToStringAsync(view, opts)`** to await every async generator to completion and return a single resolved HTML string.
 - Use **`renderToStream(view, opts)`** / **`streamResponse(view, opts)`** for instant TTFB: Aster streams the initial HTML shell with each `async function*`'s first yielded loading skeleton immediately, then flushes self-cleaning `<template>` + `<script>` swap chunks out-of-order as each async component resolves:
 
-```ts
+```tsx
 import manifest from './dist/aster-manifest.json' with { type: 'json' };
 import { streamResponse } from '@fierst/aster/ssr';
 

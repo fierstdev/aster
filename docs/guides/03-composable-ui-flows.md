@@ -85,7 +85,7 @@ An async generator advances again as soon as its previous yield resolves. Use it
 
 Exceptions thrown inside a delegated step propagate to the caller's `try/catch`. Unmount calls `.return()` on the outer generator and runs active nested `finally` blocks from the inside out. Use `ctx.signal` for work that supports cancellation and `ctx.refresh()` to request a render after other asynchronous work finishes.
 
-The [profile editor](../../playground/profile-editor.tsx) in the playground showcase demonstrates editing, confirmation with a native dialog, Escape, focus restoration, and retry after a failed save. Its confirmation returns a boolean inferred by TypeScript.
+The [profile editor](https://github.com/fierstdev/aster/blob/main/playground/profile-editor.tsx) in the playground showcase demonstrates editing, confirmation with a native dialog, Escape, focus restoration, and retry after a failed save. Its confirmation returns a boolean inferred by TypeScript.
 
 ### Moving focus after a yield
 

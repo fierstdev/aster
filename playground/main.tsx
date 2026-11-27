@@ -411,6 +411,15 @@ export function* DocsView() {
         <section class="card">
           <span class="eyebrow">Quick Reference</span>
           <h2>Aster Cheat Sheet</h2>
+          <p>
+            <a href="https://github.com/fierstdev/aster/tree/main/docs">
+              Read the guides and API reference
+            </a>
+            {' · '}
+            <a href="/llms.txt" download="llms.txt">
+              Download the handbook
+            </a>
+          </p>
           <table class="ref-table">
             <thead>
               <tr>
